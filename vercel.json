@@ -1,6 +1,6 @@
 {
   "outputDirectory": "public",
   "rewrites": [
-    { "source": "/api/fpl/:path*", "destination": "/api/fpl?path=:path*" }
+    { "source": "/api/fpl/(.*)", "destination": "/api/fpl?path=$1" }
   ]
 }
