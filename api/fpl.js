@@ -3,7 +3,7 @@
 // The dashboard calls:  /api/fpl/entry/123/  or  /api/fpl/bootstrap-static/
 // Vercel rewrites that to: /api/fpl?path=entry/123/
 
-export default async function handler(req, res) {
+module.exports = async function handler(req, res) {
   if (req.method !== 'GET') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
