@@ -9,29 +9,15 @@ A mini-league FPL dashboard. Deployed on Vercel — no local setup needed for an
 ### Step 1 — Create a GitHub account (if you don't have one)
 Go to **github.com** and sign up for free.
 
-### Step 2 — Create a new GitHub repository
-1. Click the **+** button (top right) → **New repository**
+### Step 2 — Fork this repository
+1. Click the Fork button (top right)
 2. Name it something like `cals-fpl`
-3. Set it to **Public**
-4. Click **Create repository**
 
-### Step 3 — Upload the project files
-On the repository page, click **uploading an existing file**, then drag in these three items:
-```
-cals-fpl/
-├── api/
-│   └── fpl.js
-├── public/
-│   └── index.html
-└── vercel.json
-```
-Click **Commit changes**.
-
-### Step 4 — Create a Vercel account
+### Step 3 — Create a Vercel account
 Go to **vercel.com** → **Sign Up** → choose **Continue with GitHub**.
 Authorise Vercel to access your GitHub account.
 
-### Step 5 — Import your project
+### Step 4 — Import your project
 1. In Vercel, click **Add New → Project**
 2. Find `cals-fpl` in the list and click **Import**
 3. On the configure screen:
