@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Cal's Vibecoded FPL Dashboard</title>
+<title>CVC FPL App</title>
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Barlow:wght@300;400;500;600;700&family=Barlow+Condensed:wght@400;600;700&display=swap" rel="stylesheet">
 <style>
 :root{
@@ -194,6 +194,19 @@ body{background:var(--bg);color:var(--text);font-family:'Barlow',sans-serif;font
 .chip-pts-bar-wrap{flex:1;min-width:100px;background:rgba(255,255,255,0.06);border-radius:3px;height:5px;overflow:hidden;}
 .chip-pts-bar{height:100%;border-radius:3px;}
 
+/* ── COLLAPSIBLE CHIP SECTIONS ── */
+.chip-accordion{display:flex;flex-direction:column;gap:6px;}
+.chip-accordion-item{border:1px solid var(--border);border-radius:9px;overflow:hidden;}
+.chip-accordion-header{display:flex;align-items:center;justify-content:space-between;padding:10px 14px;cursor:pointer;background:var(--surf2);transition:background 0.18s;user-select:none;}
+.chip-accordion-header:hover{background:rgba(255,255,255,0.08);}
+.chip-accordion-header.open{border-bottom:1px solid var(--border);}
+.chip-accordion-left{display:flex;align-items:center;gap:10px;}
+.chip-accordion-count{font-size:0.67rem;color:var(--muted);font-family:'Barlow Condensed',sans-serif;}
+.chip-accordion-arrow{color:var(--muted);font-size:0.75rem;transition:transform 0.2s;flex-shrink:0;}
+.chip-accordion-header.open .chip-accordion-arrow{transform:rotate(180deg);}
+.chip-accordion-body{display:none;padding:10px 14px;}
+.chip-accordion-body.open{display:block;}
+
 /* ── BENCH WATCH ── */
 .bencharea-area{grid-area:bencharea;}
 .bench-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:8px;}
@@ -248,8 +261,8 @@ body{background:var(--bg);color:var(--text);font-family:'Barlow',sans-serif;font
 <!-- SETUP -->
 <div id="setup-screen">
   <div class="setup-box">
-    <div class="setup-logo">⚽ Cal's Vibecoded FPL 🧑‍💻</div>
-    <div class="setup-sub">FPL Mini League Dashboard</div>
+    <div class="setup-logo">CVC FPL App ⚽</div>
+    <div class="setup-sub">FPL Mini-League Dashboard</div>
 
     <div id="step-teamid">
       <label class="setup-label">Your FPL Team ID</label>
@@ -305,10 +318,16 @@ body{background:var(--bg);color:var(--text);font-family:'Barlow',sans-serif;font
     <div class="card bigchart-area">
       <div class="chart-hdr">
         <div class="ctitle" style="margin:0">Season Overview</div>
-        <div class="ctog">
-          <button class="ctbtn" id="btn-rank" onclick="setChart('rank')">League Rank</button>
-          <button class="ctbtn active" id="btn-diff" onclick="setChart('diff')">Points Gap to Leader</button>
-          <button class="ctbtn" id="btn-overall" onclick="setChart('overall')">Overall Rank</button>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+          <div class="ctog">
+            <button class="ctbtn" id="btn-rank" onclick="setChart('rank')">League Rank</button>
+            <button class="ctbtn active" id="btn-diff" onclick="setChart('diff')">Points Gap to Leader</button>
+            <button class="ctbtn" id="btn-overall" onclick="setChart('overall')">Overall Rank</button>
+          </div>
+          <div class="ctog">
+            <button class="ctbtn active" id="btn-xgw" onclick="setXLabel('gw')">GW</button>
+            <button class="ctbtn" id="btn-xdate" onclick="setXLabel('date')">Date</button>
+          </div>
         </div>
       </div>
       <div class="chart-wrap"><svg id="main-svg" height="320"></svg></div>
@@ -410,7 +429,7 @@ async function fetchLeagues() {
     S.teamId = tid;
     // Only show private/custom mini leagues (type 'x'), exclude global public leagues
     const leagues = data.leagues.classic.filter(l => l.league_type === 'x');
-    if (!leagues.length) throw new Error('No private mini leagues found. You may only be in public leagues.');
+    if (!leagues.length) throw new Error('No private mini-leagues found. You may only be in public leagues.');
     leagueMap = {};
     leagues.forEach(l => leagueMap[l.id] = l);
     const listEl = document.getElementById('league-list');
@@ -430,7 +449,7 @@ function selectLeague(el) {
   document.querySelectorAll('.league-opt').forEach(o=>o.classList.remove('selected'));
   el.classList.add('selected');
   const id = parseInt(el.dataset.leagueId);
-  S.leagueId = id; S.leagueName = leagueMap[id]?.name || 'Mini League';
+  S.leagueId = id; S.leagueName = leagueMap[id]?.name || 'Mini-League';
   loadDashboard();
 }
 function goBack() { document.getElementById('step-teamid').style.display='block'; document.getElementById('league-picker').style.display='none'; }
@@ -450,6 +469,15 @@ async function loadDashboard() {
     const bootstrap = await api('bootstrap-static/');
     bootstrap.elements.forEach(p => {
       S.playerMap[p.id] = { name: p.web_name, ownership: parseFloat(p.selected_by_percent), type: p.element_type };
+    });
+    // Store deadline dates keyed by GW number
+    S.gwDeadlines = {};
+    bootstrap.events.forEach(e => {
+      if (e.deadline_time) {
+        const d = new Date(e.deadline_time);
+        // Format as "15 Mar" style
+        S.gwDeadlines[e.id] = d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+      }
     });
     const currentEvent = bootstrap.events.find(e=>e.is_current) || bootstrap.events.find(e=>e.is_next) || bootstrap.events.slice(-1)[0];
     S.currentGW = currentEvent.id;
@@ -615,7 +643,7 @@ function step(msg) { document.getElementById('loading-step').textContent = msg; 
 // ══ RENDER DASHBOARD ══════════════════════════════
 function renderDashboard() {
   const GW = S.currentGW;
-  document.getElementById('top-league-name').textContent = S.leagueName || 'Mini League';
+  document.getElementById('top-league-name').textContent = S.leagueName || 'Mini-League';
   document.getElementById('top-gw').textContent = `GW${GW}`;
   document.getElementById('gw-card-title').textContent = `GW${GW} · Manager Breakdown`;
   const scores = S.managers.map(m=>m.gwPts);
@@ -876,13 +904,8 @@ function renderChipAnalysis() {
       }).join('');
 
       if (!mgrRows) return '';
-      return `<div class="chip-section">
-        <div class="chip-section-title">
-          <span class="badge chip-badge-big ${meta.cls}">${meta.label}</span>
-          <span style="color:var(--muted);font-weight:400;font-size:0.66rem">New vs old team · split by season half</span>
-        </div>
-        <div class="chip-rows">${mgrRows}</div>
-      </div>`;
+      const countUsed = entries.length;
+      return { chipName, meta: {...meta, desc:'New vs old team · split by season half'}, rows: mgrRows, sectionId: `chip-acc-${chipName}`, countUsed };
     }
 
     const rows = entries.map(({ m, chip }) => {
@@ -1005,16 +1028,39 @@ function renderChipAnalysis() {
     }).filter(Boolean).join('');
 
     if (!rows) return '';
-    return `<div class="chip-section">
-      <div class="chip-section-title">
-        <span class="badge chip-badge-big ${meta.cls}">${meta.label}</span>
-        <span style="color:var(--muted);font-weight:400;font-size:0.66rem">${meta.desc}</span>
-      </div>
-      <div class="chip-rows">${rows}</div>
-    </div>`;
-  }).filter(Boolean).join('');
+    const sectionId = `chip-acc-${chipName}`;
+    const countUsed = entries.length;
+    return { chipName, meta, rows, sectionId, countUsed };
+  }).filter(Boolean);
 
-  body.innerHTML = sections || '<div class="no-chips-used">No chips used in this mini-league yet.</div>';
+  if (!sections.length) {
+    body.innerHTML = '<div class="no-chips-used">No chips used in this mini-league yet.</div>';
+    return;
+  }
+
+  body.innerHTML = `<div class="chip-accordion">${sections.map(({ meta, rows, sectionId, countUsed }) => `
+    <div class="chip-accordion-item">
+      <div class="chip-accordion-header" onclick="toggleChipSection('${sectionId}')">
+        <div class="chip-accordion-left">
+          <span class="badge chip-badge-big ${meta.cls}">${meta.label}</span>
+          <span class="chip-accordion-count">${countUsed} use${countUsed !== 1 ? 's' : ''} · ${meta.desc}</span>
+        </div>
+        <span class="chip-accordion-arrow">▼</span>
+      </div>
+      <div class="chip-accordion-body" id="${sectionId}">
+        <div class="chip-rows">${rows}</div>
+      </div>
+    </div>`).join('')}
+  </div>`;
+}
+
+function toggleChipSection(id) {
+  const body = document.getElementById(id);
+  const header = body?.previousElementSibling;
+  if (!body) return;
+  const isOpen = body.classList.contains('open');
+  body.classList.toggle('open', !isOpen);
+  header?.classList.toggle('open', !isOpen);
 }
 
 // ══ FORECAST ═════════════════════════════════════
@@ -1179,9 +1225,10 @@ function renderBenchWatch() {
     });
 
     regretPlayers.sort((a,b) => b.pts - a.pts);
-    const avgBenchPts = gwsWithData ? (totalBenchPts / gwsWithData).toFixed(1) : '—';
+    // Avg per player per GW: each GW has 4 bench players
+    const avgPerPlayerPerGW = gwsWithData ? (totalBenchPts / (gwsWithData * 4)).toFixed(1) : '—';
 
-    return { m, totalBenchPts, totalRegretPts, avgBenchPts, regretPlayers, gwsWithData };
+    return { m, totalBenchPts, totalRegretPts, avgPerPlayerPerGW, regretPlayers, gwsWithData };
   });
 
   // Sort by total bench pts left on bench (most regret first)
@@ -1190,7 +1237,7 @@ function renderBenchWatch() {
   const maxBenchPts = Math.max(...mgrData.map(d=>d.totalBenchPts), 1);
 
   body.innerHTML = `<div class="bench-grid">${mgrData.map(d => {
-    const { m, totalBenchPts, totalRegretPts, avgBenchPts, regretPlayers, gwsWithData } = d;
+    const { m, totalBenchPts, totalRegretPts, avgPerPlayerPerGW, regretPlayers, gwsWithData } = d;
     const barPct = Math.round(totalBenchPts / maxBenchPts * 100);
 
     const topRegrets = regretPlayers.slice(0, 3).map(p =>
@@ -1213,8 +1260,8 @@ function renderBenchWatch() {
         </div>
       </div>
       <div class="bench-stat-row">
-        <span class="bench-stat-label">Avg per GW</span>
-        <span class="bench-stat-val">${avgBenchPts} pts</span>
+        <span class="bench-stat-label">Avg per player/GW</span>
+        <span class="bench-stat-val">${avgPerPlayerPerGW} pts</span>
       </div>
       <div class="bench-stat-row">
         <span class="bench-stat-label">Regret pts (≥6)</span>
@@ -1232,7 +1279,15 @@ function renderBenchWatch() {
 
 // ══ CHART ═════════════════════════════════════════
 let cMode = 'diff';
+let xLabelMode = 'gw'; // 'gw' or 'date'
 let highlightedIdx = null;
+
+function setXLabel(mode) {
+  xLabelMode = mode;
+  document.getElementById('btn-xgw').classList.toggle('active', mode === 'gw');
+  document.getElementById('btn-xdate').classList.toggle('active', mode === 'date');
+  drawChart();
+}
 
 function setChart(m) {
   cMode = m;
@@ -1294,9 +1349,12 @@ function gwLabels(svg, gwHistory, xS, H, MB) {
   gwHistory.forEach((g,i)=>{
     const n=gwHistory.length;
     if(i>0 && i<n-1 && ![4,9,14,19,24,29,34].includes(i)) return;
+    const label = xLabelMode === 'date' && S.gwDeadlines && S.gwDeadlines[g.gw]
+      ? S.gwDeadlines[g.gw]
+      : 'GW'+g.gw;
     const t=sEl('text');t.setAttribute('x',xS(i));t.setAttribute('y',H-MB+14);t.setAttribute('text-anchor','middle');
     t.setAttribute('fill','rgba(100,160,100,0.4)');t.setAttribute('font-size','9');t.setAttribute('font-family','Barlow Condensed,sans-serif');
-    t.textContent='GW'+g.gw;svg.appendChild(t);
+    t.textContent=label;svg.appendChild(t);
   });
 }
 
