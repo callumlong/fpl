@@ -66,9 +66,9 @@ body{background:var(--bg);color:var(--text);font-family:'Barlow',sans-serif;font
 /* ── DASH GRID ── */
 #dashboard{display:none;}
 .dash{position:relative;z-index:1;padding:16px 16px 40px;display:grid;gap:14px;grid-template-columns:1fr;
-  grid-template-areas:"gwcards" "bigchart" "squadview";}
+  grid-template-areas:"gwcards" "bigchart" "forecast" "squadview";}
 .card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);padding:14px 16px;overflow:hidden;animation:fs 0.35s ease both;}
-.card:nth-child(1){animation-delay:.04s}.card:nth-child(2){animation-delay:.08s}.card:nth-child(3){animation-delay:.12s}
+.card:nth-child(1){animation-delay:.04s}.card:nth-child(2){animation-delay:.08s}.card:nth-child(3){animation-delay:.12s}.card:nth-child(4){animation-delay:.16s}
 @keyframes fs{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
 .ctitle{font-family:'Barlow Condensed',sans-serif;font-size:0.66rem;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;color:var(--muted);margin-bottom:12px;display:flex;align-items:center;gap:7px;}
 .ctitle::before{content:'';display:inline-block;width:3px;height:11px;background:var(--green);border-radius:2px;}
@@ -130,6 +130,25 @@ body{background:var(--bg);color:var(--text);font-family:'Barlow',sans-serif;font
 .tx-sep{color:var(--muted);font-size:0.8rem;flex-shrink:0;}
 .tx-hit-tag{font-family:'Barlow Condensed',sans-serif;font-size:0.58rem;font-weight:700;background:rgba(231,76,60,0.2);color:var(--red);border:1px solid rgba(231,76,60,0.3);border-radius:3px;padding:1px 5px;white-space:nowrap;}
 .no-tx{font-size:0.8rem;color:var(--muted);font-style:italic;}
+
+/* ── FORECAST ── */
+.forecast-area{grid-area:forecast;}
+.forecast-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:8px;}
+.forecast-card{background:var(--surf2);border:1px solid var(--border);border-radius:10px;padding:11px 13px;transition:border-color 0.18s;}
+.forecast-card:hover{border-color:rgba(255,255,255,0.14);}
+.fc-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:9px;}
+.fc-projected{font-family:'Bebas Neue',cursive;font-size:2.2rem;line-height:1;text-align:right;}
+.fc-proj-label{font-size:0.54rem;font-family:'Barlow Condensed',sans-serif;color:var(--muted);text-transform:uppercase;letter-spacing:0.06em;text-align:right;margin-top:-2px;}
+.fc-divider{height:1px;background:var(--border);margin:0 0 8px;}
+.fc-stats{display:flex;flex-direction:column;gap:4px;}
+.fc-row{display:flex;align-items:center;justify-content:space-between;font-size:0.71rem;}
+.fc-label{color:var(--muted);}
+.fc-val{font-weight:600;color:var(--text);}
+.fc-val.g{color:var(--green);}.fc-val.r{color:var(--red);}.fc-val.gd{color:var(--gold);}
+.trend-bar{display:flex;align-items:flex-end;gap:2px;height:20px;margin-top:6px;}
+.trend-bar-seg{flex:1;border-radius:2px 2px 0 0;min-height:2px;transition:height 0.3s;}
+.fc-chips-remaining{display:flex;gap:4px;flex-wrap:wrap;margin-top:6px;}
+.fc-disclaimer{font-size:0.62rem;color:var(--muted);font-style:italic;margin-top:10px;padding-top:8px;border-top:1px solid var(--border);line-height:1.5;}
 
 /* ── CHART ── */
 .bigchart-area{grid-area:bigchart;}
@@ -230,6 +249,12 @@ body{background:var(--bg);color:var(--text);font-family:'Barlow',sans-serif;font
     <div class="card gwcards-area">
       <div class="ctitle" id="gw-card-title">GW— · Manager Breakdown</div>
       <div class="mgr-cards-grid" id="mgr-cards"></div>
+    </div>
+    <!-- Forecast -->
+    <div class="card forecast-area">
+      <div class="ctitle">Season Forecast</div>
+      <div class="forecast-grid" id="forecast-grid"></div>
+      <div class="fc-disclaimer">⚠️ Estimates only — based on recent form (last 5 GWs), GWs remaining, and average chip uplifts. Not financial advice. Probably not FPL advice either.</div>
     </div>
     <!-- Chart -->
     <div class="card bigchart-area">
@@ -460,6 +485,7 @@ function renderDashboard() {
   document.getElementById('tx-inline-title').textContent = `GW${GW} Transfers`;
   renderCards();
   renderTransfers();
+  renderForecast();
   requestAnimationFrame(()=>setTimeout(()=>{ drawChart(); renderSquad(); }, 80));
 }
 
@@ -618,6 +644,130 @@ function renderCards() {
       highlightChart(null);
     });
   });
+}
+
+// ══ FORECAST ═════════════════════════════════════
+// Chip average uplift over a normal GW (rough FPL community estimates)
+const CHIP_UPLIFT = { wildcard: 28, bboost: 14, freehit: 18, '3xc': 20 };
+const TOTAL_GWS = 38;
+
+function calcForecast(m) {
+  const gwsPlayed = m.gwHistory.length;
+  const gwsLeft   = Math.max(0, TOTAL_GWS - gwsPlayed);
+
+  // Recent form: last 5 GWs (or however many played)
+  const recent = m.gwHistory.slice(-5).map(h => h.points);
+  const avgRecent = recent.length ? recent.reduce((a,b)=>a+b,0) / recent.length : 0;
+
+  // Form trend: simple linear slope over last 5 GWs
+  // positive = improving, negative = declining
+  let slope = 0;
+  if (recent.length >= 3) {
+    const n = recent.length;
+    const xMean = (n-1)/2;
+    const yMean = avgRecent;
+    let num=0, den=0;
+    recent.forEach((y,x) => { num += (x-xMean)*(y-yMean); den += (x-xMean)**2; });
+    slope = den ? num/den : 0;
+  }
+
+  // Trend label
+  const trendLabel = slope > 2 ? '📈 Strong form' : slope > 0.5 ? '↗ Improving' : slope < -2 ? '📉 Poor form' : slope < -0.5 ? '↘ Declining' : '→ Steady';
+  const trendCls   = slope > 0.5 ? 'g' : slope < -0.5 ? 'r' : '';
+
+  // Projected baseline: current + avg * gws left
+  // Use a slightly weighted avg: 60% recent form, 40% season average
+  const seasonAvg = gwsPlayed ? m.total / gwsPlayed : avgRecent;
+  const blendedAvg = avgRecent * 0.6 + seasonAvg * 0.4;
+  const baseline = m.total + blendedAvg * gwsLeft;
+
+  // Chip bonus: sum uplifts of unspent chips (over a normal GW)
+  const chipsAvailable = ['wildcard','bboost','freehit','3xc'].filter(c => !m.chipsSpent.includes(c));
+  const chipBonus = chipsAvailable.reduce((sum, c) => sum + (CHIP_UPLIFT[c] || 0), 0);
+
+  const projected = Math.round(baseline + chipBonus);
+
+  return { avgRecent: avgRecent.toFixed(1), slope, trendLabel, trendCls, projected, gwsLeft, chipBonus, chipsAvailable, blendedAvg: blendedAvg.toFixed(1), recent };
+}
+
+function renderForecast() {
+  const grid = document.getElementById('forecast-grid');
+  if (!S.managers.length) { grid.innerHTML = ''; return; }
+
+  // Sort by projected total descending for ranking
+  const withForecast = S.managers.map(m => ({ m, fc: calcForecast(m) }));
+  const maxProj = Math.max(...withForecast.map(x => x.fc.projected));
+
+  // Build projected ranking
+  const projRanked = [...withForecast].sort((a,b) => b.fc.projected - a.fc.projected);
+  const projRankMap = {};
+  projRanked.forEach((x,i) => projRankMap[x.m.entryId] = i+1);
+
+  // Sort display by current rank
+  const sorted = [...withForecast].sort((a,b) => a.m.rank - b.m.rank);
+
+  grid.innerHTML = sorted.map(({ m, fc }) => {
+    const projRank = projRankMap[m.entryId];
+    const rankDiff = m.rank - projRank; // positive = projected to rise
+    const rankHtml = rankDiff > 0
+      ? `<span style="color:var(--green);font-size:0.65rem;font-weight:700">▲${rankDiff}</span>`
+      : rankDiff < 0
+      ? `<span style="color:var(--red);font-size:0.65rem;font-weight:700">▼${Math.abs(rankDiff)}</span>`
+      : `<span style="color:var(--muted);font-size:0.65rem">—</span>`;
+
+    // Mini sparkline from recent 5 GWs
+    const maxPt = Math.max(...fc.recent, 1);
+    const bars = fc.recent.map((p, i) => {
+      const pct = Math.round((p / maxPt) * 100);
+      const isLast = i === fc.recent.length - 1;
+      return `<div class="trend-bar-seg" style="height:${pct}%;background:${isLast ? m.color : h2r(m.color, 0.4)};"></div>`;
+    }).join('');
+
+    // Chip pips for remaining chips
+    const chipPips = ['wildcard','bboost','freehit','3xc'].map(c => {
+      const meta = { wildcard:{cls:'b-wc',label:'WC'}, bboost:{cls:'b-bb',label:'BB'}, freehit:{cls:'b-fh',label:'FH'}, '3xc':{cls:'b-tc',label:'TC'} }[c];
+      const spent = m.chipsSpent.includes(c);
+      return `<span class="chip-pip ${meta.cls}${spent?' used':''}" title="${spent?'Used':'Available — est. +'+CHIP_UPLIFT[c]+'pts'}">${meta.label}</span>`;
+    }).join('');
+
+    return `<div class="forecast-card">
+      <div class="fc-top">
+        <div class="mc-left">${ava(m.color, m.ini, 28)}<div>
+          <div class="mc-name">${m.name}</div>
+          <div class="mc-team">${m.teamName}</div>
+        </div></div>
+        <div>
+          <div class="fc-projected" style="color:${m.color}">${fc.projected.toLocaleString()}</div>
+          <div class="fc-proj-label">projected final</div>
+        </div>
+      </div>
+      <div class="fc-divider"></div>
+      <div class="fc-stats">
+        <div class="fc-row">
+          <span class="fc-label">Projected rank</span>
+          <span class="fc-val">#${projRank} ${rankHtml}</span>
+        </div>
+        <div class="fc-row">
+          <span class="fc-label">Avg last 5 GWs</span>
+          <span class="fc-val">${fc.avgRecent} pts</span>
+        </div>
+        <div class="fc-row">
+          <span class="fc-label">Form</span>
+          <span class="fc-val ${fc.trendCls}">${fc.trendLabel}</span>
+        </div>
+        <div class="fc-row">
+          <span class="fc-label">GWs remaining</span>
+          <span class="fc-val">${fc.gwsLeft}</span>
+        </div>
+        ${fc.chipBonus > 0 ? `<div class="fc-row">
+          <span class="fc-label">Chip bonus est.</span>
+          <span class="fc-val gd">+${fc.chipBonus} pts</span>
+        </div>` : ''}
+      </div>
+      <div class="trend-bar" title="Last 5 GWs">${bars}</div>
+      <div class="fc-chips-remaining">${chipPips}</div>
+    </div>`;
+  }).join('');
 }
 
 // ══ CHART ═════════════════════════════════════════
