@@ -438,6 +438,7 @@ async function loadDashboard() {
         capElementId: capPick ? capPick.element : null,
         isTripleCap: capPick?.multiplier === 3,
         chip:       chipThisGW?.name || null,
+        chipHistory: hist.chips, // [{name, event, time}]
         gwTransfers: txData.filter(t => t.event === S.currentGW),
         chipsSpent: usedChipKeys,   // chips already used (respects WC reset)
         startingPicks,              // raw picks array for squad view
@@ -840,6 +841,69 @@ function gwLabels(svg, gwHistory, xS, H, MB) {
   });
 }
 
+// Short labels and colours for chip icons on chart
+const CHIP_ICON = {
+  wildcard:{'label':'WC','fill':'rgba(52,152,219,0.9)','stroke':'#3498db'},
+  bboost:  {'label':'BB','fill':'rgba(46,204,113,0.9)','stroke':'#2ecc71'},
+  freehit: {'label':'FH','fill':'rgba(162,155,254,0.9)','stroke':'#a29bfe'},
+  '3xc':   {'label':'TC','fill':'rgba(240,192,64,0.9)','stroke':'#f0c040'},
+};
+
+// Draws a small chip badge on a line chart at the correct position.
+// xS(i) maps gwHistory index → x. yAtGW(mi, gwIdx) → y for that manager at that point.
+function drawChipMarkers(svg, xS, yAtGW) {
+  S.managers.forEach((m, mi) => {
+    if (!m.chipHistory) return;
+    m.chipHistory.forEach(chip => {
+      const icon = CHIP_ICON[chip.name];
+      if (!icon) return;
+      // Find which gwHistory index corresponds to this chip's event
+      const gwIdx = S.gwHistory.findIndex(g => g.gw === chip.event);
+      if (gwIdx === -1) return;
+      const x = xS(gwIdx);
+      const y = yAtGW(mi, gwIdx);
+      if (y === null || y === undefined) return;
+
+      // Outer glow ring in manager colour
+      const glow = sEl('circle');
+      glow.setAttribute('cx', x); glow.setAttribute('cy', y); glow.setAttribute('r', '9');
+      glow.setAttribute('fill', 'none');
+      glow.setAttribute('stroke', m.color); glow.setAttribute('stroke-width', '1.5');
+      glow.setAttribute('opacity', '0.5');
+      svg.appendChild(glow);
+
+      // Filled circle in chip colour
+      const circ = sEl('circle');
+      circ.setAttribute('cx', x); circ.setAttribute('cy', y); circ.setAttribute('r', '7');
+      circ.setAttribute('fill', icon.fill);
+      circ.setAttribute('stroke', icon.stroke); circ.setAttribute('stroke-width', '1');
+      svg.appendChild(circ);
+
+      // Label text inside
+      const txt = sEl('text');
+      txt.setAttribute('x', x); txt.setAttribute('y', y + 3.5);
+      txt.setAttribute('text-anchor', 'middle');
+      txt.setAttribute('fill', '#0b1a0d');
+      txt.setAttribute('font-size', '6.5');
+      txt.setAttribute('font-family', 'Barlow Condensed, sans-serif');
+      txt.setAttribute('font-weight', '700');
+      txt.setAttribute('pointer-events', 'none');
+      txt.textContent = icon.label;
+      svg.appendChild(txt);
+
+      // Invisible hit area for tooltip
+      const hit = sEl('circle');
+      hit.setAttribute('cx', x); hit.setAttribute('cy', y); hit.setAttribute('r', '10');
+      hit.setAttribute('fill', 'transparent'); hit.style.cursor = 'pointer';
+      const chipFull = {wildcard:'Wildcard',bboost:'Bench Boost',freehit:'Free Hit','3xc':'Triple Cap'}[chip.name] || chip.name;
+      hit.addEventListener('mouseenter', e => showT(e, m.name, `GW${chip.event} · ${chipFull}`));
+      hit.addEventListener('mousemove', moveT);
+      hit.addEventListener('mouseleave', hideT);
+      svg.appendChild(hit);
+    });
+  });
+}
+
 function drawBump(svg,W,H) {
   const n=S.gwHistory.length,N=S.managers.length;
   const ML=34,MR=72,MT=14,MB=32;
@@ -880,6 +944,11 @@ function drawBump(svg,W,H) {
       h.addEventListener('mousemove',moveT);h.addEventListener('mouseleave',hideT);svg.appendChild(h);
     });
   });
+  // Chip markers drawn on top of all lines
+  const RANKS_bump=calcRanks();
+  const xS_bump=i=>ML+(i/(n-1))*(W-ML-MR);
+  const yS_bump=r=>MT+(r-1)/(N-1)*(H-MT-MB);
+  drawChipMarkers(svg, xS_bump, (mi,gi) => { const r=RANKS_bump[mi][gi]; return r!=null?yS_bump(r):null; });
 }
 
 function drawDiff(svg,W,H) {
@@ -944,6 +1013,10 @@ function drawDiff(svg,W,H) {
       h.addEventListener('mousemove',moveT);h.addEventListener('mouseleave',hideT);svg.appendChild(h);
     });
   });
+  // Chip markers drawn on top of all lines
+  const xS_diff=i=>ML+(i/(n-1))*(W-ML-MR);
+  const yS_diff=v=>MT+(1-(v-minD)/(maxD-minD))*(H-MT-MB);
+  drawChipMarkers(svg, xS_diff, (mi,gi) => { const v=diffs[mi][gi]; return v!=null?yS_diff(v):null; });
 }
 
 
@@ -999,6 +1072,12 @@ function drawOverall(svg,W,H) {
       h.addEventListener('mouseenter',e=>showT(e,m.name,`GW${gw} · Overall rank: ${label}`));
       h.addEventListener('mousemove',moveT);h.addEventListener('mouseleave',hideT);svg.appendChild(h);
     });
+  });
+  // Chip markers drawn on top of all lines
+  const xS_ov=i=>ML+(i/(n-1))*(W-ML-MR);
+  drawChipMarkers(svg, xS_ov, (mi,gi) => {
+    const rank = S.gwHistory[gi]?.overallRank[mi];
+    return rank != null ? MT+((rank-RANK_MIN)/(RANK_MAX-RANK_MIN))*(H-MT-MB) : null;
   });
 }
 
