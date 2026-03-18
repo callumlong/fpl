@@ -340,7 +340,7 @@ body{background:var(--bg);color:var(--text);font-family:'Barlow',sans-serif;font
     </div>
     <!-- Bench Regrets -->
     <div class="card bencharea-area">
-      <div class="ctitle">Bench Watch · Last 10 GWs</div>
+      <div class="ctitle" id="bench-card-title">Bench Watch · Full Season</div>
       <div id="bench-body"><div class="no-chips-used">Loading…</div></div>
     </div>
     <!-- Squad view + Transfers -->
@@ -593,10 +593,10 @@ async function loadDashboard() {
 
     S.picksCache = picksCache;
 
-    // Bench analysis: fetch picks for last 10 GWs per manager
+    // Bench analysis: fetch picks for ALL played GWs
     step('Loading bench data…');
     const playedGWs = [...new Set(managers.flatMap(m=>m.gwHistory.map(h=>h.event)))].sort((a,b)=>a-b);
-    const benchGWs  = playedGWs.slice(-10);
+    const benchGWs  = playedGWs; // all GWs
     const benchFetchList = [];
     managers.forEach(m => {
       benchGWs.forEach(gw => {
@@ -673,7 +673,9 @@ function renderTransfers() {
     const inC  = t.element_in_cost  ? `£${(t.element_in_cost/10).toFixed(1)}m`  : '';
     const outC = t.element_out_cost ? `£${(t.element_out_cost/10).toFixed(1)}m` : '';
     const hitHtml = m.transferCost > 0 ? `<span class="tx-hit-tag">−4</span>` : '';
-    return `<div class="tx-item">
+    const txMi = S.managers.indexOf(m);
+    return `<div class="tx-item" data-mi-card="${txMi}"
+      onmouseenter="highlightChart(${txMi})" onmouseleave="highlightChart(null)">
       ${ava(m.color, m.ini, 26)}
       <div class="tx-players-inline">
         <div class="tx-pl out"><div class="tx-pl-dir">Out</div><div class="tx-pl-name">${outN}</div><div class="tx-pl-cost">${outC}</div></div>
@@ -1127,10 +1129,10 @@ function renderForecast() {
     const projRank = displayIdx + 1; // already sorted by projected
     const rankDiff = m.rank - projRank; // positive = projected to rise
     const moveBadge = rankDiff > 0
-      ? `<span style="color:var(--green);font-family:'Barlow Condensed',sans-serif;font-size:0.75rem;font-weight:700;display:block;margin-top:-2px">▲${rankDiff} places</span>`
+      ? `<span style="color:var(--green);font-family:'Barlow Condensed',sans-serif;font-size:0.73rem;font-weight:700;display:block;margin-top:3px">#${m.rank} → #${projRank} ▲${rankDiff}</span>`
       : rankDiff < 0
-      ? `<span style="color:var(--red);font-family:'Barlow Condensed',sans-serif;font-size:0.75rem;font-weight:700;display:block;margin-top:-2px">▼${Math.abs(rankDiff)} places</span>`
-      : `<span style="color:var(--muted);font-family:'Barlow Condensed',sans-serif;font-size:0.72rem;display:block;margin-top:-2px">no change</span>`;
+      ? `<span style="color:var(--red);font-family:'Barlow Condensed',sans-serif;font-size:0.73rem;font-weight:700;display:block;margin-top:3px">#${m.rank} → #${projRank} ▼${Math.abs(rankDiff)}</span>`
+      : `<span style="color:var(--muted);font-family:'Barlow Condensed',sans-serif;font-size:0.72rem;display:block;margin-top:3px">#${m.rank} → #${projRank} no change</span>`;
 
     // Mini sparkline from recent 5 GWs
     const maxPt = Math.max(...fc.recent, 1);
@@ -1195,7 +1197,7 @@ function renderBenchWatch() {
   if (!S.managers || !S.picksCache) { body.innerHTML = '<div class="no-chips-used">No data.</div>'; return; }
 
   const playedGWs = [...new Set(S.managers.flatMap(m=>m.gwHistory.map(h=>h.event)))].sort((a,b)=>a-b);
-  const benchGWs  = playedGWs.slice(-10);
+  const benchGWs  = playedGWs; // all GWs
 
   const mgrData = S.managers.map(m => {
     let totalBenchPts = 0;
@@ -1247,7 +1249,9 @@ function renderBenchWatch() {
       </div>`
     ).join('');
 
-    return `<div class="bench-mgr-card">
+    const benchMi = S.managers.indexOf(m);
+    return `<div class="bench-mgr-card" data-mi-card="${benchMi}"
+      onmouseenter="highlightChart(${benchMi})" onmouseleave="highlightChart(null)">
       <div class="bench-mgr-head">
         ${ava(m.color, m.ini, 26)}
         <div style="flex:1">
@@ -1274,7 +1278,7 @@ function renderBenchWatch() {
       <div class="bench-players">${topRegrets}</div>` : '<div style="font-size:0.72rem;color:var(--muted);font-style:italic">No big regrets 🎉</div>'}
     </div>`;
   }).join('')}</div>
-  <div style="font-size:0.63rem;color:var(--muted);font-style:italic;margin-top:10px;padding-top:8px;border-top:1px solid var(--border)">Based on last ${benchGWs.length} gameweeks. Regret = bench player scoring 6+ pts.</div>`;
+  <div style="font-size:0.63rem;color:var(--muted);font-style:italic;margin-top:10px;padding-top:8px;border-top:1px solid var(--border)">Based on all ${benchGWs.length} gameweeks played. Regret = bench player scoring 6+ pts.</div>`;
 }
 
 // ══ CHART ═════════════════════════════════════════
@@ -1297,6 +1301,7 @@ function setChart(m) {
 
 function highlightChart(idx) {
   highlightedIdx = idx;
+  // Chart lines
   const svg = document.getElementById('main-svg');
   svg.querySelectorAll('[data-mi]').forEach(el => {
     const mi = parseInt(el.dataset.mi);
@@ -1308,8 +1313,19 @@ function highlightChart(idx) {
       el.setAttribute('stroke-width', mi === idx ? String(parseFloat(el.dataset.baseWidth||'2')*1.6) : (el.dataset.baseWidth || '2'));
     }
   });
-  // Also dim legend items
+  // Legend items
   document.querySelectorAll('.leg').forEach((el,i) => el.classList.toggle('dimmed', idx !== null && i !== idx));
+  // Global section highlight: dim everything with data-mi-card that doesn't match
+  document.querySelectorAll('[data-mi-card]').forEach(el => {
+    const mi = parseInt(el.dataset.miCard);
+    if (idx === null) {
+      el.style.opacity = '';
+      el.style.filter = '';
+    } else {
+      el.style.opacity = mi === idx ? '1' : '0.18';
+      el.style.filter  = mi === idx ? 'none' : 'saturate(0.1)';
+    }
+  });
 }
 
 function calcRanks() {
@@ -1457,7 +1473,8 @@ function drawBump(svg,W,H) {
     lbl.textContent=m.name.split(' ')[0];svg.appendChild(lbl);
     ranks.forEach((r,i)=>{
       const[x,y]=pts[i],h=sEl('circle');h.setAttribute('cx',x);h.setAttribute('cy',y);h.setAttribute('r','8');h.setAttribute('fill','transparent');h.style.cursor='pointer';
-      h.addEventListener('mouseenter',e=>showT(e,m.name,`GW${S.gwHistory[i].gw} · Rank #${r}`));
+      const bDate = xLabelMode==='date'&&S.gwDeadlines?.[S.gwHistory[i].gw] ? ` · ${S.gwDeadlines[S.gwHistory[i].gw]}` : '';
+      h.addEventListener('mouseenter',e=>showT(e,m.name,`GW${S.gwHistory[i].gw}${bDate} · Rank #${r}`));
       h.addEventListener('mousemove',moveT);h.addEventListener('mouseleave',hideT);svg.appendChild(h);
     });
   });
@@ -1526,7 +1543,8 @@ function drawDiff(svg,W,H) {
     vals.forEach((v,i)=>{
       const[x,y]=pts[i],h=sEl('circle');h.setAttribute('cx',x);h.setAttribute('cy',y);h.setAttribute('r','8');h.setAttribute('fill','transparent');h.style.cursor='pointer';
       const suffix = v===0 ? ' (Leader)' : ` (${v} pts behind)`;
-      h.addEventListener('mouseenter',e=>showT(e,m.name,`GW${S.gwHistory[i].gw}${suffix}`));
+      const dDate = xLabelMode==='date'&&S.gwDeadlines?.[S.gwHistory[i].gw] ? ` · ${S.gwDeadlines[S.gwHistory[i].gw]}` : '';
+      h.addEventListener('mouseenter',e=>showT(e,m.name,`GW${S.gwHistory[i].gw}${dDate}${suffix}`));
       h.addEventListener('mousemove',moveT);h.addEventListener('mouseleave',hideT);svg.appendChild(h);
     });
   });
@@ -1586,7 +1604,8 @@ function drawOverall(svg,W,H) {
     validPts.forEach(([x,y,rank,gw])=>{
       const h=sEl('circle');h.setAttribute('cx',x);h.setAttribute('cy',y);h.setAttribute('r','8');h.setAttribute('fill','transparent');h.style.cursor='pointer';
       const label = rank >= 1000000 ? (rank/1000000).toFixed(2)+'M' : rank >= 1000 ? Math.round(rank/1000)+'k' : rank.toString();
-      h.addEventListener('mouseenter',e=>showT(e,m.name,`GW${gw} · Overall rank: ${label}`));
+      const ovDate = xLabelMode==='date'&&S.gwDeadlines?.[gw] ? ` · ${S.gwDeadlines[gw]}` : '';
+      h.addEventListener('mouseenter',e=>showT(e,m.name,`GW${gw}${ovDate} · Overall rank: ${label}`));
       h.addEventListener('mousemove',moveT);h.addEventListener('mouseleave',hideT);svg.appendChild(h);
     });
   });
