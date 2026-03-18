@@ -66,9 +66,9 @@ body{background:var(--bg);color:var(--text);font-family:'Barlow',sans-serif;font
 /* ── DASH GRID ── */
 #dashboard{display:none;}
 .dash{position:relative;z-index:1;padding:16px 16px 40px;display:grid;gap:14px;grid-template-columns:1fr;
-  grid-template-areas:"gwcards" "bigchart" "forecast" "squadview";}
+  grid-template-areas:"gwcards" "bigchart" "forecast" "chipanalysis" "squadview";}
 .card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);padding:14px 16px;overflow:hidden;animation:fs 0.35s ease both;}
-.card:nth-child(1){animation-delay:.04s}.card:nth-child(2){animation-delay:.08s}.card:nth-child(3){animation-delay:.12s}.card:nth-child(4){animation-delay:.16s}
+.card:nth-child(1){animation-delay:.04s}.card:nth-child(2){animation-delay:.08s}.card:nth-child(3){animation-delay:.12s}.card:nth-child(4){animation-delay:.16s}.card:nth-child(5){animation-delay:.20s}
 @keyframes fs{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
 .ctitle{font-family:'Barlow Condensed',sans-serif;font-size:0.66rem;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;color:var(--muted);margin-bottom:12px;display:flex;align-items:center;gap:7px;}
 .ctitle::before{content:'';display:inline-block;width:3px;height:11px;background:var(--green);border-radius:2px;}
@@ -162,6 +162,31 @@ body{background:var(--bg);color:var(--text);font-family:'Barlow',sans-serif;font
 .leg{display:flex;align-items:center;gap:6px;font-family:'Barlow Condensed',sans-serif;font-size:0.72rem;cursor:pointer;transition:opacity 0.18s;}
 .leg.dimmed{opacity:0.28;}
 .ldot{width:8px;height:8px;border-radius:50%;flex-shrink:0;}
+
+/* ── CHIP ANALYSIS ── */
+.chipanalysis-area{grid-area:chipanalysis;}
+.chip-section{margin-bottom:20px;}
+.chip-section:last-child{margin-bottom:0;}
+.chip-section-title{font-family:'Barlow Condensed',sans-serif;font-size:0.72rem;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:10px;display:flex;align-items:center;gap:8px;}
+.chip-section-title .chip-badge-big{border-radius:5px;padding:2px 8px;font-size:0.7rem;}
+.chip-rows{display:flex;flex-direction:column;gap:6px;}
+.chip-row{background:var(--surf2);border:1px solid var(--border);border-radius:9px;padding:10px 14px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;}
+.chip-row-mgr{display:flex;align-items:center;gap:8px;min-width:130px;}
+.chip-row-gw{font-family:'Barlow Condensed',sans-serif;font-size:0.68rem;color:var(--muted);flex-shrink:0;}
+.chip-compare{display:flex;align-items:center;gap:8px;flex:1;flex-wrap:wrap;}
+.chip-team-block{background:rgba(0,0,0,0.2);border-radius:6px;padding:5px 10px;text-align:center;min-width:70px;}
+.chip-team-label{font-size:0.58rem;font-family:'Barlow Condensed',sans-serif;text-transform:uppercase;letter-spacing:0.06em;color:var(--muted);margin-bottom:2px;}
+.chip-team-pts{font-family:'Bebas Neue',cursive;font-size:1.4rem;line-height:1;}
+.chip-vs{color:var(--muted);font-size:0.8rem;flex-shrink:0;}
+.chip-verdict{font-family:'Barlow Condensed',sans-serif;font-size:0.75rem;font-weight:700;padding:3px 9px;border-radius:5px;white-space:nowrap;}
+.verdict-good{background:rgba(46,204,113,0.15);color:var(--green);border:1px solid rgba(46,204,113,0.25);}
+.verdict-bad{background:rgba(231,76,60,0.15);color:var(--red);border:1px solid rgba(231,76,60,0.25);}
+.verdict-neutral{background:rgba(255,255,255,0.06);color:var(--muted);border:1px solid var(--border);}
+.chip-player-list{font-size:0.65rem;color:var(--muted);margin-top:3px;line-height:1.4;}
+.no-chips-used{font-size:0.8rem;color:var(--muted);font-style:italic;padding:4px 0;}
+.chip-pts-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
+.chip-pts-bar-wrap{flex:1;min-width:100px;background:rgba(255,255,255,0.06);border-radius:3px;height:5px;overflow:hidden;}
+.chip-pts-bar{height:100%;border-radius:3px;}
 
 /* ── SQUAD VIEW ── */
 .squadview-area{grid-area:squadview;}
@@ -268,6 +293,11 @@ body{background:var(--bg);color:var(--text);font-family:'Barlow',sans-serif;font
       </div>
       <div class="chart-wrap"><svg id="main-svg" height="320"></svg></div>
       <div class="chart-leg" id="chart-leg"></div>
+    </div>
+    <!-- Chip Analysis -->
+    <div class="card chipanalysis-area">
+      <div class="ctitle">Chip Analysis</div>
+      <div id="chip-analysis-body"><div class="no-chips-used">Loading chip data…</div></div>
     </div>
     <!-- Squad view + Transfers -->
     <div class="card squadview-area">
@@ -408,6 +438,19 @@ async function loadDashboard() {
       });
     } catch(e) { console.warn('Live points fetch failed', e); }
 
+    // Cache for historical event live points: { [gw]: { [elementId]: pts } }
+    S.liveCache = {};
+    async function getLivePts(gw) {
+      if (S.liveCache[gw]) return S.liveCache[gw];
+      try {
+        const d = await api(`event/${gw}/live/`);
+        const map = {};
+        d.elements.forEach(el => { map[el.id] = el.stats.total_points; });
+        S.liveCache[gw] = map;
+        return map;
+      } catch(e) { return {}; }
+    }
+
     const managers = [];
     for (let i = 0; i < results.length; i++) {
       const r = results[i];
@@ -449,6 +492,54 @@ async function loadDashboard() {
     }
     S.managers = managers;
 
+    // ── Chip analysis: fetch picks for chip GWs ──────────────────
+    step('Loading chip analysis data…');
+    // Collect all chip events that need picks from: chip GW + prev GW
+    const chipGWsNeeded = new Set();
+    managers.forEach(m => {
+      m.chipHistory.forEach(c => {
+        if (['wildcard','freehit'].includes(c.name)) {
+          chipGWsNeeded.add(`${m.entryId}:${c.event}`);       // chip GW picks
+          chipGWsNeeded.add(`${m.entryId}:${c.event - 1}`);   // pre-chip GW picks
+        } else {
+          chipGWsNeeded.add(`${m.entryId}:${c.event}`);       // bb/tc: just chip GW
+        }
+      });
+    });
+
+    // Fetch all needed picks in parallel (batched to avoid hammering API)
+    const picksCache = {}; // "entryId:gw" -> picks array
+    const picksFetchList = [...chipGWsNeeded].filter(k => {
+      const [,gw] = k.split(':');
+      return parseInt(gw) >= 1;
+    });
+    // Fetch in batches of 4
+    for (let i = 0; i < picksFetchList.length; i += 4) {
+      const batch = picksFetchList.slice(i, i+4);
+      await Promise.all(batch.map(async key => {
+        const [entryId, gw] = key.split(':');
+        try {
+          const d = await api(`entry/${entryId}/event/${gw}/picks/`);
+          picksCache[key] = d.picks;
+        } catch(e) { picksCache[key] = []; }
+      }));
+    }
+
+    // Also pre-fetch live points for all chip GWs
+    const allChipGWs = [...new Set(managers.flatMap(m => m.chipHistory.map(c => c.event)))];
+    for (const gw of allChipGWs) { await getLivePts(gw); }
+    // And the GW before each WC/FH
+    const preChipGWs = [...new Set(
+      managers.flatMap(m => m.chipHistory
+        .filter(c => ['wildcard','freehit'].includes(c.name))
+        .map(c => c.event - 1)
+        .filter(g => g >= 1)
+      )
+    )];
+    for (const gw of preChipGWs) { await getLivePts(gw); }
+
+    S.picksCache = picksCache;
+
     const allGWs = [...new Set(managers.flatMap(m=>m.gwHistory.map(h=>h.event)))].sort((a,b)=>a-b);
     S.gwHistory = allGWs.map(gw => ({
       gw,
@@ -487,6 +578,7 @@ function renderDashboard() {
   renderCards();
   renderTransfers();
   renderForecast();
+  renderChipAnalysis();
   requestAnimationFrame(()=>setTimeout(()=>{ drawChart(); renderSquad(); }, 80));
 }
 
@@ -645,6 +737,157 @@ function renderCards() {
       highlightChart(null);
     });
   });
+}
+
+// ══ CHIP ANALYSIS ════════════════════════════════
+function sumPicks(picks, livePts, startingOnly=true) {
+  // Sum points for all starting picks (positions 1-11) using live pts map
+  const relevant = startingOnly ? picks.filter(p => p.position <= 11) : picks;
+  return relevant.reduce((sum, p) => sum + (livePts[p.element] || 0) * (p.multiplier || 1), 0);
+}
+
+function renderChipAnalysis() {
+  const body = document.getElementById('chip-analysis-body');
+  if (!S.managers || !S.picksCache) { body.innerHTML = '<div class="no-chips-used">No data.</div>'; return; }
+
+  const CHIP_LABELS = {
+    wildcard: { label:'Wildcard', cls:'b-wc', desc:'New team vs old team in chip GW' },
+    freehit:  { label:'Free Hit', cls:'b-fh', desc:'FH team vs old team in chip GW' },
+    bboost:   { label:'Bench Boost', cls:'b-bb', desc:'Points from starting XI comparison' },
+    '3xc':    { label:'Triple Captain', cls:'b-tc', desc:'TC pts vs standard captain pts' },
+  };
+
+  // Group chips by type across all managers
+  const byType = { wildcard:[], freehit:[], bboost:[], '3xc':[] };
+  S.managers.forEach(m => {
+    m.chipHistory.forEach(chip => {
+      if (!byType[chip.name]) return;
+      byType[chip.name].push({ m, chip });
+    });
+  });
+
+  // Sort each group by GW
+  Object.values(byType).forEach(arr => arr.sort((a,b) => a.chip.event - b.chip.event));
+
+  const chipOrder = ['wildcard','freehit','bboost','3xc'];
+  const sections = chipOrder.map(chipName => {
+    const entries = byType[chipName];
+    if (!entries.length) return '';
+    const meta = CHIP_LABELS[chipName];
+
+    const rows = entries.map(({ m, chip }) => {
+      const gw = chip.event;
+      const prevGW = gw - 1;
+      const chipPicks  = S.picksCache[`${m.entryId}:${gw}`]   || [];
+      const prevPicks  = S.picksCache[`${m.entryId}:${prevGW}`] || [];
+      const liveCurr   = S.liveCache[gw]      || {};
+      const livePrev   = S.liveCache[prevGW]  || {};
+
+      let rowHtml = '';
+
+      if (chipName === 'wildcard' || chipName === 'freehit') {
+        // Score NEW team (chip picks) in chip GW
+        const newTeamPts  = sumPicks(chipPicks, liveCurr);
+        // Score OLD team (prev GW picks) in chip GW
+        const oldTeamPts  = sumPicks(prevPicks, liveCurr);
+        const diff = newTeamPts - oldTeamPts;
+        const verdictCls  = diff > 5 ? 'verdict-good' : diff < -5 ? 'verdict-bad' : 'verdict-neutral';
+        const verdictTxt  = diff > 5 ? `+${diff} better` : diff < -5 ? `${diff} worse` : 'Similar';
+
+        // Which players are new (in chip team but not old team)
+        const prevIds  = new Set(prevPicks.filter(p=>p.position<=11).map(p=>p.element));
+        const newIds   = chipPicks.filter(p=>p.position<=11).map(p=>p.element);
+        const addedPlayers = newIds.filter(id => !prevIds.has(id))
+          .map(id => S.playerMap[id]?.name || `#${id}`).slice(0,4).join(', ');
+
+        rowHtml = `
+          <div class="chip-compare">
+            <div class="chip-team-block">
+              <div class="chip-team-label">New team</div>
+              <div class="chip-team-pts" style="color:${m.color}">${newTeamPts}</div>
+            </div>
+            <div class="chip-vs">vs</div>
+            <div class="chip-team-block">
+              <div class="chip-team-label">Old team</div>
+              <div class="chip-team-pts" style="color:var(--muted)">${oldTeamPts}</div>
+            </div>
+            <span class="chip-verdict ${verdictCls}">${verdictTxt}</span>
+          </div>
+          ${addedPlayers ? `<div class="chip-player-list" style="width:100%">In: ${addedPlayers}${newIds.filter(id=>!prevIds.has(id)).length>4?'…':''}</div>` : ''}`;
+
+      } else if (chipName === 'bboost') {
+        // Bench Boost: points with bench vs without bench
+        const allPts  = sumPicks(chipPicks, liveCurr, false); // all 15
+        const xi_pts  = sumPicks(chipPicks, liveCurr, true);  // starting 11 only
+        const benchPts = allPts - xi_pts;
+        const verdictCls = benchPts >= 20 ? 'verdict-good' : benchPts >= 8 ? 'verdict-neutral' : 'verdict-bad';
+
+        rowHtml = `
+          <div class="chip-compare">
+            <div class="chip-team-block">
+              <div class="chip-team-label">Total (BB)</div>
+              <div class="chip-team-pts" style="color:${m.color}">${allPts}</div>
+            </div>
+            <div class="chip-vs">vs</div>
+            <div class="chip-team-block">
+              <div class="chip-team-label">XI only</div>
+              <div class="chip-team-pts" style="color:var(--muted)">${xi_pts}</div>
+            </div>
+            <span class="chip-verdict ${verdictCls}">Bench: +${benchPts}</span>
+          </div>`;
+
+      } else if (chipName === '3xc') {
+        // Triple Captain: actual cap pts vs what normal (2x) would've been
+        const capPick = chipPicks.find(p => p.multiplier === 3);
+        if (!capPick) return '';
+        const capPts     = liveCurr[capPick.element] || 0;
+        const tcTotal    = capPts * 3;
+        const normalTotal= capPts * 2;
+        const bonus      = capPts; // extra point from TC
+        const capName    = S.playerMap[capPick.element]?.name || `#${capPick.element}`;
+        const verdictCls = bonus >= 12 ? 'verdict-good' : bonus >= 6 ? 'verdict-neutral' : 'verdict-bad';
+
+        rowHtml = `
+          <div class="chip-compare">
+            <div class="chip-team-block">
+              <div class="chip-team-label">TC (3×)</div>
+              <div class="chip-team-pts" style="color:${m.color}">${tcTotal}</div>
+            </div>
+            <div class="chip-vs">vs</div>
+            <div class="chip-team-block">
+              <div class="chip-team-label">Normal (2×)</div>
+              <div class="chip-team-pts" style="color:var(--muted)">${normalTotal}</div>
+            </div>
+            <span class="chip-verdict ${verdictCls}">+${bonus} from TC</span>
+          </div>
+          <div class="chip-player-list" style="width:100%">Captain: ${capName} · ${capPts}pts base</div>`;
+      }
+
+      if (!rowHtml) return '';
+
+      return `<div class="chip-row">
+        <div class="chip-row-mgr">
+          ${ava(m.color, m.ini, 26)}
+          <div>
+            <div style="font-weight:600;font-size:0.82rem">${m.name.split(' ')[0]}</div>
+            <div class="chip-row-gw">GW${gw}</div>
+          </div>
+        </div>
+        ${rowHtml}
+      </div>`;
+    }).filter(Boolean).join('');
+
+    if (!rows) return '';
+    return `<div class="chip-section">
+      <div class="chip-section-title">
+        <span class="badge chip-badge-big ${meta.cls}">${meta.label}</span>
+        <span style="color:var(--muted);font-weight:400;font-size:0.66rem">${meta.desc}</span>
+      </div>
+      <div class="chip-rows">${rows}</div>
+    </div>`;
+  }).filter(Boolean).join('');
+
+  body.innerHTML = sections || '<div class="no-chips-used">No chips used in this mini-league yet.</div>';
 }
 
 // ══ FORECAST ═════════════════════════════════════
