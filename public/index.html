@@ -839,50 +839,50 @@ function renderChipAnalysis() {
         if (!chip) return `<div class="chip-half-block chip-half-empty"><div class="chip-half-title" style="color:${halfColor}">${halfLabel}</div><div style="font-size:0.72rem;color:var(--muted);font-style:italic">Not used</div></div>`;
         const gw = chip.event;
         const prevGW = gw - 1;
-        const chipPicks = S.picksCache[\`\${m.entryId}:\${gw}\`] || [];
-        const prevPicks = S.picksCache[\`\${m.entryId}:\${prevGW}\`] || [];
+        const chipPicks = S.picksCache[`${m.entryId}:${gw}`] || [];
+        const prevPicks = S.picksCache[`${m.entryId}:${prevGW}`] || [];
         const liveCurr  = S.liveCache[gw] || {};
         const newTeamPts = sumPicks(chipPicks, liveCurr);
         const oldTeamPts = sumPicks(prevPicks, liveCurr);
         const diff = newTeamPts - oldTeamPts;
         const verdictCls = diff > 5 ? 'verdict-good' : diff < -5 ? 'verdict-bad' : 'verdict-neutral';
-        const verdictTxt = diff > 5 ? \`+\${diff} better\` : diff < -5 ? \`\${diff} worse\` : 'Similar';
+        const verdictTxt = diff > 5 ? `+${diff} better` : diff < -5 ? `${diff} worse` : 'Similar';
         const prevIds = new Set(prevPicks.filter(p=>p.position<=11).map(p=>p.element));
         const newIds  = chipPicks.filter(p=>p.position<=11).map(p=>p.element);
         const added   = newIds.filter(id=>!prevIds.has(id)).map(id=>S.playerMap[id]?.name||'?').slice(0,3).join(', ');
-        return \`<div class="chip-half-block">
-          <div class="chip-half-title" style="color:\${halfColor}">\${halfLabel} · GW\${gw}</div>
+        return `<div class="chip-half-block">
+          <div class="chip-half-title" style="color:${halfColor}">${halfLabel} · GW${gw}</div>
           <div class="chip-compare" style="margin-top:5px">
-            <div class="chip-team-block"><div class="chip-team-label">New team</div><div class="chip-team-pts" style="color:\${m.color}">\${newTeamPts}</div></div>
+            <div class="chip-team-block"><div class="chip-team-label">New team</div><div class="chip-team-pts" style="color:${m.color}">${newTeamPts}</div></div>
             <div class="chip-vs">vs</div>
-            <div class="chip-team-block"><div class="chip-team-label">Old team</div><div class="chip-team-pts" style="color:var(--muted)">\${oldTeamPts}</div></div>
-            <span class="chip-verdict \${verdictCls}">\${verdictTxt}</span>
+            <div class="chip-team-block"><div class="chip-team-label">Old team</div><div class="chip-team-pts" style="color:var(--muted)">${oldTeamPts}</div></div>
+            <span class="chip-verdict ${verdictCls}">${verdictTxt}</span>
           </div>
-          \${added ? \`<div class="chip-player-list">In: \${added}\${newIds.filter(id=>!prevIds.has(id)).length>3?'…':''}</div>\` : ''}
-        </div>\`;
+          ${added ? `<div class="chip-player-list">In: ${added}${newIds.filter(id=>!prevIds.has(id)).length>3?'…':''}</div>` : ''}
+        </div>`;
       }
 
       const mgrRows = Object.values(byMgr).map(({ m, h1, h2 }) => {
-        return \`<div class="chip-row chip-row-halved">
-          <div class="chip-row-mgr">\${ava(m.color, m.ini, 26)}<div>
-            <div style="font-weight:600;font-size:0.82rem">\${m.name.split(' ')[0]}</div>
-            <div class="chip-row-gw">\${m.teamName}</div>
+        return `<div class="chip-row chip-row-halved">
+          <div class="chip-row-mgr">${ava(m.color, m.ini, 26)}<div>
+            <div style="font-weight:600;font-size:0.82rem">${m.name.split(' ')[0]}</div>
+            <div class="chip-row-gw">${m.teamName}</div>
           </div></div>
           <div class="chip-halves">
-            \${buildHalfBlock(m, h1, 'First Half', 'rgba(162,155,254,0.9)')}
-            \${buildHalfBlock(m, h2, 'Second Half', 'rgba(46,204,113,0.9)')}
+            ${buildHalfBlock(m, h1, 'First Half', 'rgba(162,155,254,0.9)')}
+            ${buildHalfBlock(m, h2, 'Second Half', 'rgba(46,204,113,0.9)')}
           </div>
-        </div>\`;
+        </div>`;
       }).join('');
 
       if (!mgrRows) return '';
-      return \`<div class="chip-section">
+      return `<div class="chip-section">
         <div class="chip-section-title">
-          <span class="badge chip-badge-big \${meta.cls}">\${meta.label}</span>
+          <span class="badge chip-badge-big ${meta.cls}">${meta.label}</span>
           <span style="color:var(--muted);font-weight:400;font-size:0.66rem">New vs old team · split by season half</span>
         </div>
-        <div class="chip-rows">\${mgrRows}</div>
-      </div>\`;
+        <div class="chip-rows">${mgrRows}</div>
+      </div>`;
     }
 
     const rows = entries.map(({ m, chip }) => {
