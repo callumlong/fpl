@@ -66,9 +66,9 @@ body{background:var(--bg);color:var(--text);font-family:'Barlow',sans-serif;font
 /* ── DASH GRID ── */
 #dashboard{display:none;}
 .dash{position:relative;z-index:1;padding:16px 16px 40px;display:grid;gap:14px;grid-template-columns:1fr;
-  grid-template-areas:"gwcards" "bigchart" "forecast" "chipanalysis" "squadview";}
+  grid-template-areas:"gwcards" "bigchart" "forecast" "chipanalysis" "bencharea" "squadview";}
 .card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);padding:14px 16px;overflow:hidden;animation:fs 0.35s ease both;}
-.card:nth-child(1){animation-delay:.04s}.card:nth-child(2){animation-delay:.08s}.card:nth-child(3){animation-delay:.12s}.card:nth-child(4){animation-delay:.16s}.card:nth-child(5){animation-delay:.20s}
+.card:nth-child(1){animation-delay:.04s}.card:nth-child(2){animation-delay:.08s}.card:nth-child(3){animation-delay:.12s}.card:nth-child(4){animation-delay:.16s}.card:nth-child(5){animation-delay:.20s}.card:nth-child(6){animation-delay:.24s}
 @keyframes fs{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
 .ctitle{font-family:'Barlow Condensed',sans-serif;font-size:0.66rem;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;color:var(--muted);margin-bottom:12px;display:flex;align-items:center;gap:7px;}
 .ctitle::before{content:'';display:inline-block;width:3px;height:11px;background:var(--green);border-radius:2px;}
@@ -184,9 +184,29 @@ body{background:var(--bg);color:var(--text);font-family:'Barlow',sans-serif;font
 .verdict-neutral{background:rgba(255,255,255,0.06);color:var(--muted);border:1px solid var(--border);}
 .chip-player-list{font-size:0.65rem;color:var(--muted);margin-top:3px;line-height:1.4;}
 .no-chips-used{font-size:0.8rem;color:var(--muted);font-style:italic;padding:4px 0;}
+.chip-row-halved{flex-direction:column;align-items:flex-start;gap:10px;}
+.chip-halves{display:grid;grid-template-columns:1fr 1fr;gap:8px;width:100%;}
+.chip-half-block{background:rgba(0,0,0,0.2);border-radius:7px;padding:8px 10px;border:1px solid var(--border);}
+.chip-half-empty{opacity:0.45;}
+.chip-half-title{font-family:'Barlow Condensed',sans-serif;font-size:0.66rem;font-weight:700;text-transform:uppercase;letter-spacing:0.07em;margin-bottom:4px;}
+@media(max-width:500px){.chip-halves{grid-template-columns:1fr;}}
 .chip-pts-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
 .chip-pts-bar-wrap{flex:1;min-width:100px;background:rgba(255,255,255,0.06);border-radius:3px;height:5px;overflow:hidden;}
 .chip-pts-bar{height:100%;border-radius:3px;}
+
+/* ── BENCH WATCH ── */
+.bencharea-area{grid-area:bencharea;}
+.bench-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:8px;}
+.bench-mgr-card{background:var(--surf2);border:1px solid var(--border);border-radius:10px;padding:10px 13px;}
+.bench-mgr-head{display:flex;align-items:center;gap:8px;margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid var(--border);}
+.bench-stat-row{display:flex;justify-content:space-between;font-size:0.7rem;margin-bottom:4px;}
+.bench-stat-label{color:var(--muted);}
+.bench-stat-val{font-weight:600;}
+.bench-players{margin-top:6px;display:flex;flex-direction:column;gap:3px;}
+.bench-player{display:flex;justify-content:space-between;align-items:center;font-size:0.7rem;padding:2px 5px;border-radius:4px;}
+.bench-player.regret{background:rgba(231,76,60,0.1);border:1px solid rgba(231,76,60,0.2);}
+.bench-player.fine{border:1px solid transparent;}
+.bench-player-pts{font-family:'Bebas Neue',cursive;font-size:0.95rem;line-height:1;}
 
 /* ── SQUAD VIEW ── */
 .squadview-area{grid-area:squadview;}
@@ -298,6 +318,11 @@ body{background:var(--bg);color:var(--text);font-family:'Barlow',sans-serif;font
     <div class="card chipanalysis-area">
       <div class="ctitle">Chip Analysis</div>
       <div id="chip-analysis-body"><div class="no-chips-used">Loading chip data…</div></div>
+    </div>
+    <!-- Bench Regrets -->
+    <div class="card bencharea-area">
+      <div class="ctitle">Bench Watch · Last 10 GWs</div>
+      <div id="bench-body"><div class="no-chips-used">Loading…</div></div>
     </div>
     <!-- Squad view + Transfers -->
     <div class="card squadview-area">
@@ -540,6 +565,29 @@ async function loadDashboard() {
 
     S.picksCache = picksCache;
 
+    // Bench analysis: fetch picks for last 10 GWs per manager
+    step('Loading bench data…');
+    const playedGWs = [...new Set(managers.flatMap(m=>m.gwHistory.map(h=>h.event)))].sort((a,b)=>a-b);
+    const benchGWs  = playedGWs.slice(-10);
+    const benchFetchList = [];
+    managers.forEach(m => {
+      benchGWs.forEach(gw => {
+        const key = `${m.entryId}:${gw}`;
+        if (!picksCache[key]) benchFetchList.push({ key, entryId: m.entryId, gw });
+      });
+    });
+    for (let i = 0; i < benchFetchList.length; i += 6) {
+      const batch = benchFetchList.slice(i, i+6);
+      await Promise.all(batch.map(async ({ key, entryId, gw }) => {
+        try {
+          const d = await api(`entry/${entryId}/event/${gw}/picks/`);
+          picksCache[key] = d.picks;
+        } catch(e) { picksCache[key] = []; }
+      }));
+    }
+    // Fetch live pts for those GWs too
+    for (const gw of benchGWs) { await getLivePts(gw); }
+
     const allGWs = [...new Set(managers.flatMap(m=>m.gwHistory.map(h=>h.event)))].sort((a,b)=>a-b);
     S.gwHistory = allGWs.map(gw => ({
       gw,
@@ -579,6 +627,7 @@ function renderDashboard() {
   renderTransfers();
   renderForecast();
   renderChipAnalysis();
+  renderBenchWatch();
   requestAnimationFrame(()=>setTimeout(()=>{ drawChart(); renderSquad(); }, 80));
 }
 
@@ -775,6 +824,67 @@ function renderChipAnalysis() {
     if (!entries.length) return '';
     const meta = CHIP_LABELS[chipName];
 
+    // For WC and FH: group by manager, show H1 (pre-GW20) and H2 (GW20+) side by side
+    const isHalved = chipName === 'wildcard' || chipName === 'freehit';
+    if (isHalved) {
+      // Build per-manager paired rows
+      const byMgr = {};
+      entries.forEach(({m, chip}) => {
+        if (!byMgr[m.entryId]) byMgr[m.entryId] = { m, h1: null, h2: null };
+        if (chip.event < 20) byMgr[m.entryId].h1 = chip;
+        else byMgr[m.entryId].h2 = chip;
+      });
+
+      function buildHalfBlock(m, chip, halfLabel, halfColor) {
+        if (!chip) return `<div class="chip-half-block chip-half-empty"><div class="chip-half-title" style="color:${halfColor}">${halfLabel}</div><div style="font-size:0.72rem;color:var(--muted);font-style:italic">Not used</div></div>`;
+        const gw = chip.event;
+        const prevGW = gw - 1;
+        const chipPicks = S.picksCache[\`\${m.entryId}:\${gw}\`] || [];
+        const prevPicks = S.picksCache[\`\${m.entryId}:\${prevGW}\`] || [];
+        const liveCurr  = S.liveCache[gw] || {};
+        const newTeamPts = sumPicks(chipPicks, liveCurr);
+        const oldTeamPts = sumPicks(prevPicks, liveCurr);
+        const diff = newTeamPts - oldTeamPts;
+        const verdictCls = diff > 5 ? 'verdict-good' : diff < -5 ? 'verdict-bad' : 'verdict-neutral';
+        const verdictTxt = diff > 5 ? \`+\${diff} better\` : diff < -5 ? \`\${diff} worse\` : 'Similar';
+        const prevIds = new Set(prevPicks.filter(p=>p.position<=11).map(p=>p.element));
+        const newIds  = chipPicks.filter(p=>p.position<=11).map(p=>p.element);
+        const added   = newIds.filter(id=>!prevIds.has(id)).map(id=>S.playerMap[id]?.name||'?').slice(0,3).join(', ');
+        return \`<div class="chip-half-block">
+          <div class="chip-half-title" style="color:\${halfColor}">\${halfLabel} · GW\${gw}</div>
+          <div class="chip-compare" style="margin-top:5px">
+            <div class="chip-team-block"><div class="chip-team-label">New team</div><div class="chip-team-pts" style="color:\${m.color}">\${newTeamPts}</div></div>
+            <div class="chip-vs">vs</div>
+            <div class="chip-team-block"><div class="chip-team-label">Old team</div><div class="chip-team-pts" style="color:var(--muted)">\${oldTeamPts}</div></div>
+            <span class="chip-verdict \${verdictCls}">\${verdictTxt}</span>
+          </div>
+          \${added ? \`<div class="chip-player-list">In: \${added}\${newIds.filter(id=>!prevIds.has(id)).length>3?'…':''}</div>\` : ''}
+        </div>\`;
+      }
+
+      const mgrRows = Object.values(byMgr).map(({ m, h1, h2 }) => {
+        return \`<div class="chip-row chip-row-halved">
+          <div class="chip-row-mgr">\${ava(m.color, m.ini, 26)}<div>
+            <div style="font-weight:600;font-size:0.82rem">\${m.name.split(' ')[0]}</div>
+            <div class="chip-row-gw">\${m.teamName}</div>
+          </div></div>
+          <div class="chip-halves">
+            \${buildHalfBlock(m, h1, 'First Half', 'rgba(162,155,254,0.9)')}
+            \${buildHalfBlock(m, h2, 'Second Half', 'rgba(46,204,113,0.9)')}
+          </div>
+        </div>\`;
+      }).join('');
+
+      if (!mgrRows) return '';
+      return \`<div class="chip-section">
+        <div class="chip-section-title">
+          <span class="badge chip-badge-big \${meta.cls}">\${meta.label}</span>
+          <span style="color:var(--muted);font-weight:400;font-size:0.66rem">New vs old team · split by season half</span>
+        </div>
+        <div class="chip-rows">\${mgrRows}</div>
+      </div>\`;
+    }
+
     const rows = entries.map(({ m, chip }) => {
       const gw = chip.event;
       const prevGW = gw - 1;
@@ -816,25 +926,42 @@ function renderChipAnalysis() {
           ${addedPlayers ? `<div class="chip-player-list" style="width:100%">In: ${addedPlayers}${newIds.filter(id=>!prevIds.has(id)).length>4?'…':''}</div>` : ''}`;
 
       } else if (chipName === 'bboost') {
-        // Bench Boost: points with bench vs without bench
-        const allPts  = sumPicks(chipPicks, liveCurr, false); // all 15
-        const xi_pts  = sumPicks(chipPicks, liveCurr, true);  // starting 11 only
-        const benchPts = allPts - xi_pts;
-        const verdictCls = benchPts >= 20 ? 'verdict-good' : benchPts >= 8 ? 'verdict-neutral' : 'verdict-bad';
+        // Bench Boost: rank all 15 players by pts scored in chip GW.
+        // Top 11 = "best XI" you could've fielded. Bottom 4 = bench bonus.
+        const allPlayers = chipPicks.map(p => ({
+          id: p.element,
+          pts: (liveCurr[p.element] || 0) * (p.multiplier || 1),
+          name: S.playerMap[p.element]?.name || `#${p.element}`,
+          wasOnBench: p.position > 11,
+        })).sort((a,b) => b.pts - a.pts);
+
+        const top11 = allPlayers.slice(0, 11);
+        const bottom4 = allPlayers.slice(11);
+        const top11Pts = top11.reduce((s,p)=>s+p.pts, 0);
+        const benchBonus = bottom4.reduce((s,p)=>s+p.pts, 0);
+        const totalPts = top11Pts + benchBonus;
+
+        // Bench players who made the top11 (hidden gems the BB unlocked)
+        const benchGems = bottom4.filter(p => !p.wasOnBench === false && p.pts > 0)
+          .concat(top11.filter(p => p.wasOnBench));
+        const gemNames = benchGems.map(p=>p.name).slice(0,3).join(', ');
+
+        const verdictCls = benchBonus >= 20 ? 'verdict-good' : benchBonus >= 8 ? 'verdict-neutral' : 'verdict-bad';
 
         rowHtml = `
           <div class="chip-compare">
             <div class="chip-team-block">
-              <div class="chip-team-label">Total (BB)</div>
-              <div class="chip-team-pts" style="color:${m.color}">${allPts}</div>
+              <div class="chip-team-label">Best XI</div>
+              <div class="chip-team-pts" style="color:${m.color}">${top11Pts}</div>
             </div>
-            <div class="chip-vs">vs</div>
+            <div class="chip-vs">+</div>
             <div class="chip-team-block">
-              <div class="chip-team-label">XI only</div>
-              <div class="chip-team-pts" style="color:var(--muted)">${xi_pts}</div>
+              <div class="chip-team-label">Bench bonus</div>
+              <div class="chip-team-pts" style="color:var(--muted)">${benchBonus}</div>
             </div>
-            <span class="chip-verdict ${verdictCls}">Bench: +${benchPts}</span>
-          </div>`;
+            <span class="chip-verdict ${verdictCls}">Total: ${totalPts}</span>
+          </div>
+          ${gemNames ? `<div class="chip-player-list" style="width:100%">Bench contributors: ${gemNames}</div>` : ''}`;
 
       } else if (chipName === '3xc') {
         // Triple Captain: actual cap pts vs what normal (2x) would've been
@@ -947,17 +1074,17 @@ function renderForecast() {
   const projRankMap = {};
   projRanked.forEach((x,i) => projRankMap[x.m.entryId] = i+1);
 
-  // Sort display by current rank
-  const sorted = [...withForecast].sort((a,b) => a.m.rank - b.m.rank);
+  // Sort display by PROJECTED rank
+  const sorted = [...withForecast].sort((a,b) => b.fc.projected - a.fc.projected);
 
-  grid.innerHTML = sorted.map(({ m, fc }) => {
-    const projRank = projRankMap[m.entryId];
+  grid.innerHTML = sorted.map(({ m, fc }, displayIdx) => {
+    const projRank = displayIdx + 1; // already sorted by projected
     const rankDiff = m.rank - projRank; // positive = projected to rise
-    const rankHtml = rankDiff > 0
-      ? `<span style="color:var(--green);font-size:0.65rem;font-weight:700">▲${rankDiff}</span>`
+    const moveBadge = rankDiff > 0
+      ? `<span style="color:var(--green);font-family:'Barlow Condensed',sans-serif;font-size:0.75rem;font-weight:700;display:block;margin-top:-2px">▲${rankDiff} places</span>`
       : rankDiff < 0
-      ? `<span style="color:var(--red);font-size:0.65rem;font-weight:700">▼${Math.abs(rankDiff)}</span>`
-      : `<span style="color:var(--muted);font-size:0.65rem">—</span>`;
+      ? `<span style="color:var(--red);font-family:'Barlow Condensed',sans-serif;font-size:0.75rem;font-weight:700;display:block;margin-top:-2px">▼${Math.abs(rankDiff)} places</span>`
+      : `<span style="color:var(--muted);font-family:'Barlow Condensed',sans-serif;font-size:0.72rem;display:block;margin-top:-2px">no change</span>`;
 
     // Mini sparkline from recent 5 GWs
     const maxPt = Math.max(...fc.recent, 1);
@@ -967,7 +1094,6 @@ function renderForecast() {
       return `<div class="trend-bar-seg" style="height:${pct}%;background:${isLast ? m.color : h2r(m.color, 0.4)};"></div>`;
     }).join('');
 
-    // Chip pips for remaining chips
     const chipPips = ['wildcard','bboost','freehit','3xc'].map(c => {
       const meta = { wildcard:{cls:'b-wc',label:'WC'}, bboost:{cls:'b-bb',label:'BB'}, freehit:{cls:'b-fh',label:'FH'}, '3xc':{cls:'b-tc',label:'TC'} }[c];
       const spent = m.chipsSpent.includes(c);
@@ -975,21 +1101,28 @@ function renderForecast() {
     }).join('');
 
     return `<div class="forecast-card">
-      <div class="fc-top">
-        <div class="mc-left">${ava(m.color, m.ini, 28)}<div>
-          <div class="mc-name">${m.name}</div>
-          <div class="mc-team">${m.teamName}</div>
-        </div></div>
+      <!-- Big projected rank dominates top -->
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:8px;">
         <div>
-          <div class="fc-projected" style="color:${m.color}">${fc.projected.toLocaleString()}</div>
-          <div class="fc-proj-label">projected final</div>
+          <div style="font-family:'Bebas Neue',cursive;font-size:4.5rem;line-height:0.85;color:${m.color};opacity:0.95">${projRank}</div>
+          <div style="font-size:0.56rem;font-family:'Barlow Condensed',sans-serif;color:var(--muted);text-transform:uppercase;letter-spacing:0.07em;margin-top:4px">projected rank</div>
+          ${moveBadge}
+        </div>
+        <div style="text-align:right;padding-top:4px">
+          ${ava(m.color, m.ini, 28)}
+          <div style="font-weight:600;font-size:0.82rem;margin-top:5px">${m.name.split(' ')[0]}</div>
+          <div style="font-size:0.62rem;color:var(--muted)">${m.teamName}</div>
         </div>
       </div>
       <div class="fc-divider"></div>
       <div class="fc-stats">
         <div class="fc-row">
-          <span class="fc-label">Projected rank</span>
-          <span class="fc-val">#${projRank} ${rankHtml}</span>
+          <span class="fc-label">Projected total</span>
+          <span class="fc-val" style="color:${m.color};font-family:'Bebas Neue',cursive;font-size:1.1rem">${fc.projected.toLocaleString()}</span>
+        </div>
+        <div class="fc-row">
+          <span class="fc-label">Current rank</span>
+          <span class="fc-val">#${m.rank} · ${m.total}pts</span>
         </div>
         <div class="fc-row">
           <span class="fc-label">Avg last 5 GWs</span>
@@ -999,19 +1132,102 @@ function renderForecast() {
           <span class="fc-label">Form</span>
           <span class="fc-val ${fc.trendCls}">${fc.trendLabel}</span>
         </div>
-        <div class="fc-row">
-          <span class="fc-label">GWs remaining</span>
-          <span class="fc-val">${fc.gwsLeft}</span>
-        </div>
         ${fc.chipBonus > 0 ? `<div class="fc-row">
-          <span class="fc-label">Chip bonus est.</span>
-          <span class="fc-val gd">+${fc.chipBonus} pts</span>
+          <span class="fc-label">Chip est.</span>
+          <span class="fc-val gd">+${fc.chipBonus}</span>
         </div>` : ''}
       </div>
-      <div class="trend-bar" title="Last 5 GWs">${bars}</div>
+      <div class="trend-bar" style="margin-top:8px" title="Last 5 GWs">${bars}</div>
       <div class="fc-chips-remaining">${chipPips}</div>
     </div>`;
   }).join('');
+}
+
+// ══ BENCH WATCH ══════════════════════════════════
+function renderBenchWatch() {
+  const body = document.getElementById('bench-body');
+  if (!S.managers || !S.picksCache) { body.innerHTML = '<div class="no-chips-used">No data.</div>'; return; }
+
+  const playedGWs = [...new Set(S.managers.flatMap(m=>m.gwHistory.map(h=>h.event)))].sort((a,b)=>a-b);
+  const benchGWs  = playedGWs.slice(-10);
+
+  const mgrData = S.managers.map(m => {
+    let totalBenchPts = 0;
+    let totalRegretPts = 0; // pts left on bench by players who scored > 2
+    const regretPlayers = []; // {name, pts, gw}
+    let gwsWithData = 0;
+
+    benchGWs.forEach(gw => {
+      const key    = `${m.entryId}:${gw}`;
+      const picks  = S.picksCache[key] || [];
+      const live   = S.liveCache[gw]   || {};
+      if (!picks.length) return;
+      gwsWithData++;
+
+      const benchPicks = picks.filter(p => p.position > 11); // positions 12-15
+      benchPicks.forEach(p => {
+        const pts = live[p.element] || 0;
+        totalBenchPts += pts;
+        if (pts >= 6) { // meaningful bench contribution missed
+          totalRegretPts += pts;
+          regretPlayers.push({
+            name: S.playerMap[p.element]?.name || `#${p.element}`,
+            pts, gw,
+          });
+        }
+      });
+    });
+
+    regretPlayers.sort((a,b) => b.pts - a.pts);
+    const avgBenchPts = gwsWithData ? (totalBenchPts / gwsWithData).toFixed(1) : '—';
+
+    return { m, totalBenchPts, totalRegretPts, avgBenchPts, regretPlayers, gwsWithData };
+  });
+
+  // Sort by total bench pts left on bench (most regret first)
+  mgrData.sort((a,b) => b.totalBenchPts - a.totalBenchPts);
+
+  const maxBenchPts = Math.max(...mgrData.map(d=>d.totalBenchPts), 1);
+
+  body.innerHTML = `<div class="bench-grid">${mgrData.map(d => {
+    const { m, totalBenchPts, totalRegretPts, avgBenchPts, regretPlayers, gwsWithData } = d;
+    const barPct = Math.round(totalBenchPts / maxBenchPts * 100);
+
+    const topRegrets = regretPlayers.slice(0, 3).map(p =>
+      `<div class="bench-player regret">
+        <span>${p.name} <span style="color:var(--muted);font-size:0.63rem">GW${p.gw}</span></span>
+        <span class="bench-player-pts" style="color:var(--red)">${p.pts}</span>
+      </div>`
+    ).join('');
+
+    return `<div class="bench-mgr-card">
+      <div class="bench-mgr-head">
+        ${ava(m.color, m.ini, 26)}
+        <div style="flex:1">
+          <div style="font-weight:600;font-size:0.83rem">${m.name.split(' ')[0]}</div>
+          <div style="font-size:0.62rem;color:var(--muted)">${m.teamName}</div>
+        </div>
+        <div style="text-align:right">
+          <div style="font-family:'Bebas Neue',cursive;font-size:1.5rem;line-height:1;color:${totalRegretPts>30?'var(--red)':totalRegretPts>15?'var(--gold)':m.color}">${totalBenchPts}</div>
+          <div style="font-size:0.56rem;font-family:'Barlow Condensed',sans-serif;color:var(--muted);text-transform:uppercase">bench pts</div>
+        </div>
+      </div>
+      <div class="bench-stat-row">
+        <span class="bench-stat-label">Avg per GW</span>
+        <span class="bench-stat-val">${avgBenchPts} pts</span>
+      </div>
+      <div class="bench-stat-row">
+        <span class="bench-stat-label">Regret pts (≥6)</span>
+        <span class="bench-stat-val" style="color:${totalRegretPts>20?'var(--red)':'var(--text)'}">${totalRegretPts}</span>
+      </div>
+      <div style="margin:6px 0 8px;background:rgba(255,255,255,0.06);border-radius:3px;height:4px;overflow:hidden">
+        <div style="height:100%;width:${barPct}%;background:${m.color};border-radius:3px;opacity:0.7"></div>
+      </div>
+      ${topRegrets ? `<div style="font-size:0.62rem;color:var(--muted);margin-bottom:4px;font-family:'Barlow Condensed',sans-serif;text-transform:uppercase;letter-spacing:0.06em">Left on bench</div>
+      <div class="bench-players">${topRegrets}</div>` : '<div style="font-size:0.72rem;color:var(--muted);font-style:italic">No big regrets 🎉</div>'}
+    </div>`;
+  }).join('')}</div>
+  <div style="font-size:0.63rem;color:var(--muted);font-style:italic;margin-top:10px;padding-top:8px;border-top:1px solid var(--border)">Based on last ${benchGWs.length} gameweeks. Regret = bench player scoring 6+ pts.</div>`;
 }
 
 // ══ CHART ═════════════════════════════════════════
