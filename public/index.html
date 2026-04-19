@@ -707,12 +707,13 @@ function renderDashboard() {
   // In full mode: single column with all sections
   const dash = document.querySelector('.dash');
   if (isGWMode) {
-    dash.style.gridTemplateColumns = '1fr 1fr';
-    dash.style.gridTemplateAreas = '"gwcards bigchart" "squadview bigchart"';
-    // Make chart fill full height on right
+    dash.style.gridTemplateColumns = '1fr';
+    dash.style.gridTemplateAreas = '"gwcards" "squadview"';
     const chartCard = document.querySelector('.bigchart-area');
-    if (chartCard) { chartCard.style.height = ''; chartCard.style.alignSelf = 'stretch'; }
+    if (chartCard) chartCard.style.display = 'none';
   } else {
+    const chartCard = document.querySelector('.bigchart-area');
+    if (chartCard) chartCard.style.display = '';
     dash.style.gridTemplateColumns = '1fr';
     dash.style.gridTemplateAreas = '"gwcards" "bigchart" "forecast" "chipanalysis" "bencharea" "squadview"';
     const chartCard = document.querySelector('.bigchart-area');
