@@ -46,6 +46,13 @@ body{background:var(--bg);color:var(--text);font-family:'Barlow',sans-serif;font
 .back-btn{background:transparent;border:1px solid var(--border);border-radius:8px;padding:7px 14px;color:var(--muted);cursor:pointer;font-family:'Barlow Condensed',sans-serif;font-size:0.7rem;font-weight:700;text-transform:uppercase;letter-spacing:0.07em;transition:color 0.2s,border-color 0.2s;margin-bottom:14px;display:inline-block;}
 .back-btn:hover{color:var(--text);border-color:rgba(255,255,255,0.2);}
 
+.mode-opt{background:var(--surf2);border:1px solid var(--border);border-radius:10px;padding:14px 16px;cursor:pointer;display:flex;align-items:center;gap:14px;transition:border-color 0.18s,background 0.18s;}
+.mode-opt:hover{border-color:rgba(46,204,113,0.4);background:rgba(46,204,113,0.06);}
+.mode-opt-icon{font-size:1.6rem;flex-shrink:0;line-height:1;}
+.mode-opt-title{font-weight:700;font-size:0.92rem;margin-bottom:3px;}
+.mode-opt-desc{font-size:0.72rem;color:var(--muted);line-height:1.4;}
+.mode-opt-arrow{color:var(--muted);font-size:1rem;margin-left:auto;flex-shrink:0;}
+
 /* ── LOADING ── */
 #loading-screen{position:fixed;inset:0;z-index:190;background:var(--bg);display:none;align-items:center;justify-content:center;flex-direction:column;gap:14px;}
 .spinner{width:38px;height:38px;border:3px solid rgba(46,204,113,0.12);border-top-color:var(--green);border-radius:50%;animation:spin 0.8s linear infinite;}
@@ -255,6 +262,7 @@ body{background:var(--bg);color:var(--text);font-family:'Barlow',sans-serif;font
 ::-webkit-scrollbar{width:4px;height:4px;}
 ::-webkit-scrollbar-thumb{background:rgba(46,204,113,0.18);border-radius:2px;}
 </style>
+<script defer src="/_vercel/insights/script.js"></script>
 </head>
 <body>
 
@@ -275,8 +283,30 @@ body{background:var(--bg);color:var(--text);font-family:'Barlow',sans-serif;font
     </div>
     <div id="league-picker">
       <button class="back-btn" onclick="goBack()">← Back</button>
-      <label class="setup-label">Select a league to load it</label>
+      <label class="setup-label">Select a league</label>
       <div class="league-list" id="league-list"></div>
+    </div>
+    <div id="mode-picker" style="display:none">
+      <button class="back-btn" onclick="goBackToLeague()">← Back</button>
+      <label class="setup-label">What would you like to see?</label>
+      <div style="display:flex;flex-direction:column;gap:10px">
+        <div class="mode-opt" onclick="loadDashboard('gw')">
+          <div class="mode-opt-icon">⚡</div>
+          <div>
+            <div class="mode-opt-title">This Gameweek</div>
+            <div class="mode-opt-desc">Manager breakdown, starting XIs and transfers — fast load.</div>
+          </div>
+          <div class="mode-opt-arrow">→</div>
+        </div>
+        <div class="mode-opt" onclick="loadDashboard('full')">
+          <div class="mode-opt-icon">📊</div>
+          <div>
+            <div class="mode-opt-title">Full Season Review</div>
+            <div class="mode-opt-desc">Everything — charts, forecast, chip analysis, bench watch. Takes longer.</div>
+          </div>
+          <div class="mode-opt-arrow">→</div>
+        </div>
+      </div>
     </div>
   </div>
 </div>
@@ -379,7 +409,7 @@ const ini = name => { const p=name.trim().split(' '); return (p[0][0]+(p[1]?p[1]
 const ava = (col,in2,sz=30) => `<div class="ava" style="width:${sz}px;height:${sz}px;background:${h2r(col,.15)};border:1.5px solid ${col};color:${col}">${in2}</div>`;
 
 // ══ STATE ═════════════════════════════════════════
-let S = { teamId:null, leagueId:null, leagueName:null, managers:[], playerMap:{}, playerOwnership:{}, gwHistory:[], currentGW:null };
+let S = { teamId:null, leagueId:null, leagueName:null, managers:[], playerMap:{}, playerOwnership:{}, gwHistory:[], currentGW:null, dashMode:'full' };
 
 // ══ CHIP METADATA ═════════════════════════════════
 // Chips reset after GW20 (2nd wildcard + any unplayed chips)
@@ -450,13 +480,23 @@ function selectLeague(el) {
   el.classList.add('selected');
   const id = parseInt(el.dataset.leagueId);
   S.leagueId = id; S.leagueName = leagueMap[id]?.name || 'Mini-League';
-  loadDashboard();
+  document.getElementById('league-picker').style.display = 'none';
+  document.getElementById('mode-picker').style.display = 'block';
 }
-function goBack() { document.getElementById('step-teamid').style.display='block'; document.getElementById('league-picker').style.display='none'; }
+function goBack() {
+  document.getElementById('step-teamid').style.display='block';
+  document.getElementById('league-picker').style.display='none';
+  document.getElementById('mode-picker').style.display='none';
+}
+function goBackToLeague() {
+  document.getElementById('league-picker').style.display='block';
+  document.getElementById('mode-picker').style.display='none';
+}
 function showErr(id, msg) { const el=document.getElementById(id); el.innerHTML=msg; el.style.display='block'; }
 
 // ══ LOAD DASHBOARD ════════════════════════════════
-async function loadDashboard() {
+async function loadDashboard(mode = 'full') {
+  S.dashMode = mode;
   document.getElementById('setup-screen').style.display = 'none';
   const loadEl = document.getElementById('loading-screen');
   loadEl.style.display = 'flex';
@@ -545,7 +585,8 @@ async function loadDashboard() {
     }
     S.managers = managers;
 
-    // ── Chip analysis: fetch picks for chip GWs ──────────────────
+    if (S.dashMode === 'full') {
+    // ── Chip analysis + bench (full season only) ──────────────────
     step('Loading chip analysis data…');
     // Collect all chip events that need picks from: chip GW + prev GW
     const chipGWsNeeded = new Set();
@@ -616,6 +657,8 @@ async function loadDashboard() {
     // Fetch live pts for those GWs too
     for (const gw of benchGWs) { await getLivePts(gw); }
 
+    } // end if dashMode === 'full'
+
     const allGWs = [...new Set(managers.flatMap(m=>m.gwHistory.map(h=>h.event)))].sort((a,b)=>a-b);
     S.gwHistory = allGWs.map(gw => ({
       gw,
@@ -643,20 +686,50 @@ function step(msg) { document.getElementById('loading-step').textContent = msg; 
 // ══ RENDER DASHBOARD ══════════════════════════════
 function renderDashboard() {
   const GW = S.currentGW;
+  const isGWMode = S.dashMode === 'gw';
+
   document.getElementById('top-league-name').textContent = S.leagueName || 'Mini-League';
-  document.getElementById('top-gw').textContent = `GW${GW}`;
+  document.getElementById('top-gw').textContent = `GW${GW}${isGWMode ? ' · GW Only' : ''}`;
   document.getElementById('gw-card-title').textContent = `GW${GW} · Manager Breakdown`;
   const scores = S.managers.map(m=>m.gwPts);
   document.getElementById('t-avg').textContent  = (scores.reduce((a,b)=>a+b,0)/scores.length).toFixed(1);
   document.getElementById('t-hi').textContent   = Math.max(...scores);
   document.getElementById('t-lead').textContent = [...S.managers].sort((a,b)=>b.total-a.total)[0].name.split(' ')[0];
   document.getElementById('tx-inline-title').textContent = `GW${GW} Transfers`;
+
+  // Show/hide full-season-only sections
+  ['forecast-area','chipanalysis-area','bencharea-area'].forEach(cls => {
+    const el = document.querySelector('.' + cls);
+    if (el) el.style.display = isGWMode ? 'none' : '';
+  });
+
+  // In GW mode: 2-col layout — left stack (mgr cards + squad), right = slim chart
+  // In full mode: single column with all sections
+  const dash = document.querySelector('.dash');
+  if (isGWMode) {
+    dash.style.gridTemplateColumns = '1fr 1fr';
+    dash.style.gridTemplateAreas = '"gwcards bigchart" "squadview bigchart"';
+    // Make chart fill full height on right
+    const chartCard = document.querySelector('.bigchart-area');
+    if (chartCard) { chartCard.style.height = ''; chartCard.style.alignSelf = 'stretch'; }
+  } else {
+    dash.style.gridTemplateColumns = '1fr';
+    dash.style.gridTemplateAreas = '"gwcards" "bigchart" "forecast" "chipanalysis" "bencharea" "squadview"';
+    const chartCard = document.querySelector('.bigchart-area');
+    if (chartCard) { chartCard.style.height = ''; chartCard.style.alignSelf = ''; }
+  }
+
   renderCards();
   renderTransfers();
-  renderForecast();
-  renderChipAnalysis();
-  renderBenchWatch();
-  requestAnimationFrame(()=>setTimeout(()=>{ drawChart(); renderSquad(); }, 80));
+  if (!isGWMode) {
+    renderForecast();
+    renderChipAnalysis();
+    renderBenchWatch();
+  }
+  requestAnimationFrame(()=>setTimeout(()=>{
+    renderSquad();
+    if (!isGWMode) drawChart();
+  }, 80));
 }
 
 // ══ TRANSFERS ════════════════════════════════════
@@ -1712,7 +1785,8 @@ function resetDashboard(){
   document.getElementById('setup-screen').style.display='flex';
   document.getElementById('step-teamid').style.display='block';
   document.getElementById('league-picker').style.display='none';
-  S={teamId:null,leagueId:null,leagueName:null,managers:[],playerMap:{},playerOwnership:{},gwHistory:[],currentGW:null};
+  document.getElementById('mode-picker').style.display='none';
+  S={teamId:null,leagueId:null,leagueName:null,managers:[],playerMap:{},playerOwnership:{},gwHistory:[],currentGW:null,dashMode:'full'};
 }
 
 document.getElementById('input-teamid').addEventListener('keydown', e => { if(e.key==='Enter') fetchLeagues(); });
