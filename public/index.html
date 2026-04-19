@@ -713,11 +713,9 @@ function renderDashboard() {
     if (chartCard) chartCard.style.display = 'none';
   } else {
     const chartCard = document.querySelector('.bigchart-area');
-    if (chartCard) chartCard.style.display = '';
+    if (chartCard) { chartCard.style.display = ''; chartCard.style.height = ''; chartCard.style.alignSelf = ''; }
     dash.style.gridTemplateColumns = '1fr';
     dash.style.gridTemplateAreas = '"gwcards" "bigchart" "forecast" "chipanalysis" "bencharea" "squadview"';
-    const chartCard = document.querySelector('.bigchart-area');
-    if (chartCard) { chartCard.style.height = ''; chartCard.style.alignSelf = ''; }
   }
 
   renderCards();
