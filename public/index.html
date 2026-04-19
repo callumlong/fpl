@@ -237,12 +237,16 @@ body{background:var(--bg);color:var(--text);font-family:'Barlow',sans-serif;font
 .squad-col-name{display:flex;align-items:center;gap:8px;margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid var(--border);}
 .squad-col-pts{font-family:'Bebas Neue',cursive;font-size:1.1rem;line-height:1;margin-left:auto;}
 .player-list{display:flex;flex-direction:column;gap:3px;}
-.player-row{display:flex;align-items:center;gap:7px;padding:3px 6px;border-radius:5px;font-size:0.76rem;}
+.player-row{display:flex;align-items:center;gap:5px;padding:3px 6px;border-radius:5px;font-size:0.76rem;position:relative;overflow:hidden;}
 .player-row.differential{background:rgba(46,204,113,0.08);border:1px solid rgba(46,204,113,0.2);}
 .player-row.template{background:rgba(240,192,64,0.07);border:1px solid rgba(240,192,64,0.18);}
 .player-row.normal{border:1px solid transparent;}
-.own-pct{font-family:'Barlow Condensed',sans-serif;font-size:0.62rem;font-weight:700;min-width:32px;text-align:right;flex-shrink:0;}
-.player-gwpts{font-family:'Bebas Neue',cursive;font-size:0.9rem;line-height:1;color:var(--white);min-width:22px;text-align:right;flex-shrink:0;}
+.player-pts-bar{position:absolute;left:0;top:0;bottom:0;border-radius:5px;opacity:0.13;pointer-events:none;z-index:0;}
+.player-row-content{display:flex;align-items:center;gap:5px;flex:1;position:relative;z-index:1;}
+.shirt-icon{flex-shrink:0;width:14px;height:14px;}
+.transferred-in{font-size:0.58rem;font-weight:700;background:rgba(46,204,113,0.2);color:var(--green);border:1px solid rgba(46,204,113,0.4);border-radius:3px;padding:0 4px;flex-shrink:0;line-height:1.6;}
+.own-pct{font-family:'Barlow Condensed',sans-serif;font-size:0.62rem;font-weight:700;min-width:28px;text-align:right;flex-shrink:0;}
+.player-gwpts{font-family:'Bebas Neue',cursive;font-size:0.88rem;line-height:1;color:var(--white);min-width:18px;text-align:right;flex-shrink:0;}
 .own-pct.diff-pct{color:var(--green);}
 .own-pct.tmpl-pct{color:var(--gold);}
 .own-pct.norm-pct{color:var(--muted);}
@@ -507,8 +511,42 @@ async function loadDashboard(mode = 'full') {
 
     step('Loading player & ownership data…');
     const bootstrap = await api('bootstrap-static/');
+    // Build team colour map from bootstrap teams
+    const teamColours = {};
+    // FPL teams provide team_code; we map to approximate colours
+    const TEAM_COLOUR_MAP = {
+      3:'#EF0107',    // Arsenal
+      7:'#95BFE5',    // Aston Villa
+      94:'#D71920',   // Bournemouth
+      36:'#e30613',   // Brentford
+      8:'#0057B8',    // Brighton
+      90:'#034694',   // Chelsea
+      31:'#1B458F',   // Crystal Palace
+      11:'#274488',   // Everton
+      54:'#000000',   // Fulham
+      40:'#4D86C8',   // Ipswich
+      13:'#003090',   // Leicester
+      14:'#C8102E',   // Liverpool
+      43:'#6CABDD',   // Man City
+      1:'#DA291C',    // Man Utd
+      4:'#241F20',    // Newcastle
+      17:'#FDB913',   // Nott'm Forest
+      20:'#D71920',   // Southampton
+      6:'#132257',    // Spurs
+      57:'#7A263A',   // West Ham
+      39:'#FDB913',   // Wolves
+    };
+    bootstrap.teams.forEach(t => {
+      teamColours[t.id] = TEAM_COLOUR_MAP[t.code] || '#4a7a52';
+    });
     bootstrap.elements.forEach(p => {
-      S.playerMap[p.id] = { name: p.web_name, ownership: parseFloat(p.selected_by_percent), type: p.element_type };
+      S.playerMap[p.id] = {
+        name: p.web_name,
+        ownership: parseFloat(p.selected_by_percent),
+        type: p.element_type,
+        teamId: p.team,
+        teamColour: teamColours[p.team] || '#4a7a52',
+      };
     });
     // Store deadline dates keyed by GW number
     S.gwDeadlines = {};
@@ -1696,6 +1734,9 @@ function renderSquad() {
 
   // Build outfield starting XI per manager
   const cols = S.managers.map(m => {
+    // Build set of element IDs transferred IN this GW
+    const transferredInIds = new Set(m.gwTransfers.map(t => t.element_in));
+
     const outfield = m.startingPicks
       .filter(p => { const pl=S.playerMap[p.element]; return pl && pl.type !== 1; })
       .map(p => {
@@ -1704,7 +1745,9 @@ function renderSquad() {
         const tier = own===null ? 'normal' : own < 10 ? 'differential' : own >= 40 ? 'template' : 'normal';
         const isCap = p.element === m.capElementId;
         const mult = p.multiplier || 1;
-        return { id: p.element, name: pl ? pl.name : `#${p.element}`, ownership: own, tier, isCap, mult };
+        const transferredIn = transferredInIds.has(p.element);
+        const teamColour = pl?.teamColour || '#4a7a52';
+        return { id: p.element, name: pl ? pl.name : `#${p.element}`, ownership: own, tier, isCap, mult, transferredIn, teamColour };
       })
       .sort((a,b) => (b.ownership||0) - (a.ownership||0));
     return { manager: m, players: outfield };
@@ -1714,19 +1757,46 @@ function renderSquad() {
   const allPlayerIds = new Set(cols.flatMap(c => c.players.map(p => p.id)));
 
   grid.innerHTML = cols.map(({ manager: m, players }, mi) => {
+    // Find max GW pts in this column for bar scaling
+    const colMaxPts = Math.max(...players.map(p => {
+      const v = S.playerMap[p.id]?.gwPts || 0;
+      return p.isCap ? v * p.mult : v;
+    }), 1);
+
     const rows = players.map(p => {
       const ownStr = p.ownership !== null ? `${p.ownership.toFixed(1)}%` : '?';
       const ownCls = p.tier==='differential'?'diff-pct':p.tier==='template'?'tmpl-pct':'norm-pct';
-      const capIcon = p.isCap ? '<span style="color:var(--gold);font-size:0.72rem;margin-left:3px" title="Captain">©</span>' : '';
+      const capIcon = p.isCap ? '<span style="color:var(--gold);font-size:0.68rem;margin-left:2px" title="Captain">©</span>' : '';
       const gwPtsVal = S.playerMap[p.id]?.gwPts;
-      const gwPtsStr = gwPtsVal !== undefined ? (p.isCap ? `${gwPtsVal*p.mult}` : `${gwPtsVal}`) : '';
-      const gwPtsHtml = gwPtsStr ? `<span class="player-gwpts">${gwPtsStr}</span>` : '';
+      const gwPtsDisplay = gwPtsVal !== undefined ? (p.isCap ? gwPtsVal * p.mult : gwPtsVal) : null;
+      const gwPtsHtml = gwPtsDisplay !== null ? `<span class="player-gwpts">${gwPtsDisplay}</span>` : '';
+
+      // Points bar — conditional formatting style, fills behind the row
+      const barPct = gwPtsDisplay !== null ? Math.round((gwPtsDisplay / colMaxPts) * 100) : 0;
+      const barColour = gwPtsDisplay >= 10 ? 'var(--green)' : gwPtsDisplay >= 6 ? 'var(--gold)' : 'rgba(255,255,255,0.3)';
+      const barHtml = barPct > 0 ? `<div class="player-pts-bar" style="width:${barPct}%;background:${barColour}"></div>` : '';
+
+      // Shirt icon SVG — simple football shirt shape in team colour
+      const sc = p.teamColour;
+      const shirtSvg = `<svg class="shirt-icon" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg">
+        <path d="M7,2 L5,5 L1,4 L2,9 L5,9 L5,18 L15,18 L15,9 L18,9 L19,4 L15,5 L13,2 C12,3.5 8,3.5 7,2Z"
+          fill="${sc}" stroke="rgba(0,0,0,0.3)" stroke-width="0.8"/>
+      </svg>`;
+
+      // Transfer-in badge
+      const txBadge = p.transferredIn ? '<span class="transferred-in">IN</span>' : '';
+
       return `<div class="player-row ${p.tier}" data-pid="${p.id}"
         onmouseenter="highlightPlayer(${p.id})"
         onmouseleave="unhighlightPlayer()">
-        <span class="player-name">${p.name}${capIcon}</span>
-        ${gwPtsHtml}
-        <span class="own-pct ${ownCls}">${ownStr}</span>
+        ${barHtml}
+        <div class="player-row-content">
+          ${shirtSvg}
+          <span class="player-name">${p.name}${capIcon}</span>
+          ${txBadge}
+          ${gwPtsHtml}
+          <span class="own-pct ${ownCls}">${ownStr}</span>
+        </div>
       </div>`;
     }).join('');
 
